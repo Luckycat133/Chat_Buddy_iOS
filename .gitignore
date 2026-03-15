@@ -98,3 +98,6 @@ pnpm-debug.log*
 .claude/
 .gemini/
 *.json.bak
+
+# Web Reference Project
+Chat_Buddy_Web/
