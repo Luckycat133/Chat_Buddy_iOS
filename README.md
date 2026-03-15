@@ -1,6 +1,6 @@
-# Chat Buddy iOS
+[English](README.md) | [简体中文](README_zh.md)
 
-**Chat Buddy iOS** is a native, high-performance intelligent AI companion application built entirely with SwiftUI. This project represents a complete, deep migration of the acclaimed Web-based Chat Buddy features into a seamless, native iOS experience.
+# Chat Buddy iOS
 
 ![iOS 17+](https://img.shields.io/badge/iOS-17.0+-black?style=flat&logo=apple)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-100%25-blue?style=flat&logo=swift)

@@ -1,3 +1,5 @@
+[English](CHANGELOG.md) | [简体中文](CHANGELOG_zh.md)
+
 # Changelog — Chat Buddy iOS
 
 All notable changes to the iOS app are documented here.
