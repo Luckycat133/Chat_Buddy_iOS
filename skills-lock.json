@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "skills": {
+    "code-review-excellence": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "7437cac5798603b94ce1019fa701c659a3deddcfc8c482a3ac42b8bcb65f6d4e"
+    },
+    "ios-26-platform": {
+      "source": "johnrogers/claude-swift-engineering",
+      "sourceType": "github",
+      "computedHash": "b412dae43dd70da1617b500a1f510f2ea4e7cf6d50218a20229660631c91057d"
+    },
+    "ios-hig": {
+      "source": "johnrogers/claude-swift-engineering",
+      "sourceType": "github",
+      "computedHash": "349e4e3a67153556095c54fd8c8294dd74b1438afd5374ae2432d24f20ac54ad"
+    },
+    "ios-swift-development": {
+      "source": "aj-geddes/useful-ai-prompts",
+      "sourceType": "github",
+      "computedHash": "aba684d5675d792652c8147787b2b18efa263b56e11a0698cd8cc830574d0adc"
+    },
+    "mobile-app-testing": {
+      "source": "aj-geddes/useful-ai-prompts",
+      "sourceType": "github",
+      "computedHash": "e2d98369fe82d9f3fae79af919c53bf4ae767182487b0e3ca90910d8697339f6"
+    },
+    "mobile-ios-design": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "b7652af80989c86dd8945a89c6cb188acf6de8a3ca2205c427adf2ed478e63c3"
+    },
+    "requesting-code-review": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "computedHash": "93a837ba79c3c3f0b3e503fd9d8b54c638337d73d200c1af3bca9607264bf0e0"
+    }
+  }
+}

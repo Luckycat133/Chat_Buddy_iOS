@@ -1,0 +1,5 @@
+interface:
+  display_name: "iOS HIG"
+  short_description: "Use when designing iOS interfaces, implementing accessibility, handling dark mode, ensuring adequate touch targets, providing animation/haptic feedback."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Mobile App Testing"
+  short_description: "Comprehensive mobile app testing strategies for iOS and Android. Covers unit tests, UI tests, integration tests, performance testing, and test automation."
+policy:
+  allow_implicit_invocation: true
