@@ -1,5 +1,0 @@
-interface:
-  display_name: "iOS 26 Platform"
-  short_description: "Use when implementing iOS 26 features, deploying iOS 26+ apps, or supporting backward compatibility with iOS 17/18."
-policy:
-  allow_implicit_invocation: true

@@ -1,5 +1,0 @@
-interface:
-  display_name: "iOS Swift Development"
-  short_description: "Develop native iOS apps with Swift. Covers MVVM architecture, SwiftUI, URLSession for networking, Combine for reactive programming, and Core Data persistence."
-policy:
-  allow_implicit_invocation: true
