@@ -77,7 +77,7 @@ struct PostComposerView: View {
                         PhotosPicker(selection: $selectedItems, maxSelectionCount: 4, matching: .images) {
                             HStack {
                                 Image(systemName: "photo.on.rectangle.angled")
-                                Text("Photo")
+                                Text(localization.t("moments_photo"))
                                     .font(.system(size: 14))
                                 Spacer()
                                 Text("\(imageDataList.count)/4")
@@ -207,6 +207,7 @@ struct PostComposerView: View {
 private struct LocationPickerView: View {
     @Binding var selected: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(LocalizationManager.self) private var localization
     @State private var customText = ""
 
     private let presets = [
@@ -217,11 +218,11 @@ private struct LocationPickerView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Custom") {
+                Section(localization.t("moments_location_custom")) {
                     HStack {
-                        TextField("Enter location…", text: $customText)
+                        TextField(localization.t("moments_location_placeholder"), text: $customText)
                         if !customText.isEmpty {
-                            Button("Use") {
+                            Button(localization.t("moments_location_use")) {
                                 selected = customText
                                 dismiss()
                             }
@@ -231,7 +232,7 @@ private struct LocationPickerView: View {
                         }
                     }
                 }
-                Section("Popular") {
+                Section(localization.t("moments_location_popular")) {
                     ForEach(presets, id: \.self) { loc in
                         Button(loc) {
                             selected = loc
@@ -241,11 +242,11 @@ private struct LocationPickerView: View {
                     }
                 }
             }
-            .navigationTitle("Location")
+            .navigationTitle(localization.t("moments_location"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(localization.t("cancel")) { dismiss() }
                 }
             }
         }

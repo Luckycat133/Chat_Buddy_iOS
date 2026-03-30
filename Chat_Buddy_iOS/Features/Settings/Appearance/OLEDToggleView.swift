@@ -11,7 +11,7 @@ struct OLEDToggleView: View {
             Section {
                 Toggle(localization.t("oled_mode"), isOn: $tm.oledEnabled)
             } footer: {
-                Text("Uses pure black backgrounds in dark mode to save battery on OLED screens.")
+                Text(localization.t("oled_mode_desc"))
             }
         }
         .navigationTitle(localization.t("oled_mode"))

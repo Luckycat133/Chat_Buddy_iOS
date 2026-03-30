@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Single post card in the Moments feed.
 struct MomentCardView: View {
@@ -10,6 +13,7 @@ struct MomentCardView: View {
 
     @Environment(MomentsStore.self) private var store
     @Environment(LocalizationManager.self) private var localization
+    @Environment(SocialService.self) private var social
 
     private var isMe: Bool { post.authorId == "user-me" }
     private var persona: Persona? { PersonaStore.persona(byId: post.authorId) }
@@ -100,6 +104,7 @@ struct MomentCardView: View {
     private func singlePhoto(_ filename: String) -> some View {
         let url = store.imageURL(for: filename)
         return Group {
+            #if os(iOS)
             if let data = try? Data(contentsOf: url),
                let ui = UIImage(data: data) {
                 Image(uiImage: ui)
@@ -110,12 +115,16 @@ struct MomentCardView: View {
             } else {
                 Color.gray.opacity(0.2).frame(height: 160)
             }
+            #else
+            Color.gray.opacity(0.2).frame(height: 160)
+            #endif
         }
     }
 
     private func gridPhoto(_ filename: String) -> some View {
         let url = store.imageURL(for: filename)
         return Group {
+            #if os(iOS)
             if let data = try? Data(contentsOf: url),
                let ui = UIImage(data: data) {
                 Image(uiImage: ui)
@@ -126,6 +135,9 @@ struct MomentCardView: View {
             } else {
                 Color.gray.opacity(0.2).frame(height: 110)
             }
+            #else
+            Color.gray.opacity(0.2).frame(height: 110)
+            #endif
         }
     }
 
@@ -184,7 +196,10 @@ struct MomentCardView: View {
         HStack(spacing: DSSpacing.lg) {
             // Like
             Button {
-                store.toggleLike(postId: post.id)
+                let nowLiked = store.toggleLike(postId: post.id)
+                if nowLiked {
+                    social.onMomentLiked()
+                }
             } label: {
                 Label(myLiked ? localization.t("moments_liked") : localization.t("moments_like"),
                       systemImage: myLiked ? "heart.fill" : "heart")

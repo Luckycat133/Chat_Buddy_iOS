@@ -14,22 +14,30 @@ enum BGTaskIdentifier {
 /// Registers and schedules iOS `BGTask` jobs for Moments AI content generation.
 /// Call `MomentsBackgroundScheduler.register()` once at app launch (before the first scene connects).
 enum MomentsBackgroundScheduler {
+    private static var didRegister = false
+    private static weak var sharedMomentsStore: MomentsStore?
+    private static weak var sharedAPIConfigStore: APIConfigStore?
+
+    static let momentsDataDidChange = Notification.Name("MomentsBackgroundScheduler.momentsDataDidChange")
+
+    static func configure(momentsStore: MomentsStore, apiConfigStore: APIConfigStore) {
+        sharedMomentsStore = momentsStore
+        sharedAPIConfigStore = apiConfigStore
+    }
 
     // MARK: - Registration (call once at app launch)
 
-    static func register(
-        momentsStore: MomentsStore,
-        apiConfigStore: APIConfigStore
-    ) {
+    static func register() {
+        guard !didRegister else { return }
+        didRegister = true
+
         // 1. Periodic AI post generation (appRefreshTask — fires every ~30 min when system allows)
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: BGTaskIdentifier.momentsRefresh,
             using: nil
         ) { task in
             guard let appRefreshTask = task as? BGAppRefreshTask else { return }
-            handleMomentsRefresh(task: appRefreshTask,
-                                 momentsStore: momentsStore,
-                                 apiConfigStore: apiConfigStore)
+            handleMomentsRefresh(task: appRefreshTask)
         }
 
         // 2. Story Events (birthdays / holidays) — runs once per day as a processing task
@@ -38,9 +46,7 @@ enum MomentsBackgroundScheduler {
             using: nil
         ) { task in
             guard let processingTask = task as? BGProcessingTask else { return }
-            handleStoryEvents(task: processingTask,
-                              momentsStore: momentsStore,
-                              apiConfigStore: apiConfigStore)
+            handleStoryEvents(task: processingTask)
         }
     }
 
@@ -67,20 +73,19 @@ enum MomentsBackgroundScheduler {
 
     // MARK: - Handlers
 
-    private static func handleMomentsRefresh(
-        task: BGAppRefreshTask,
-        momentsStore: MomentsStore,
-        apiConfigStore: APIConfigStore
-    ) {
+    private static func handleMomentsRefresh(task: BGAppRefreshTask) {
         // Re-schedule immediately so the next refresh is queued
         scheduleMomentsRefresh()
 
         let bgTask = Task {
             do {
+                let momentsStore = sharedMomentsStore ?? MomentsStore()
+                let apiConfigStore = sharedAPIConfigStore ?? APIConfigStore()
                 try await periodicMomentsPost(
                     momentsStore: momentsStore,
                     apiConfigStore: apiConfigStore
                 )
+                NotificationCenter.default.post(name: momentsDataDidChange, object: nil)
                 task.setTaskCompleted(success: true)
             } catch {
                 task.setTaskCompleted(success: false)
@@ -92,19 +97,18 @@ enum MomentsBackgroundScheduler {
         }
     }
 
-    private static func handleStoryEvents(
-        task: BGProcessingTask,
-        momentsStore: MomentsStore,
-        apiConfigStore: APIConfigStore
-    ) {
+    private static func handleStoryEvents(task: BGProcessingTask) {
         scheduleStoryEvents()
 
         let bgTask = Task {
             do {
+                let momentsStore = sharedMomentsStore ?? MomentsStore()
+                let apiConfigStore = sharedAPIConfigStore ?? APIConfigStore()
                 try await checkAndPostStoryEvents(
                     momentsStore: momentsStore,
                     apiConfigStore: apiConfigStore
                 )
+                NotificationCenter.default.post(name: momentsDataDidChange, object: nil)
                 task.setTaskCompleted(success: true)
             } catch {
                 task.setTaskCompleted(success: false)

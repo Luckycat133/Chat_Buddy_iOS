@@ -13,6 +13,15 @@ import Foundation
     }
 
     init() {
+        loadFromStorage()
+    }
+
+    /// Reload drafts from persisted storage and apply expiry policy.
+    func reloadFromStorage() {
+        loadFromStorage()
+    }
+
+    private func loadFromStorage() {
         let loaded: [String: DraftEntry] = StorageService.shared.get(Self.key, default: [:])
         let cutoff = Calendar.current.date(byAdding: .day, value: -Self.expiryDays, to: Date()) ?? Date()
         drafts = loaded.filter { $0.value.savedAt > cutoff }

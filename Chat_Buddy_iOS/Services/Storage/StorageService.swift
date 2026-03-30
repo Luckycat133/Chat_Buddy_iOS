@@ -4,6 +4,46 @@ import Foundation
 final class StorageService {
     static let shared = StorageService()
 
+    enum ImportValidationError: LocalizedError {
+        case keyNotAllowed(String)
+        case payloadTooLarge(key: String, size: Int, max: Int)
+        case totalPayloadTooLarge(size: Int, max: Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .keyNotAllowed(let key):
+                return "Import contains unsupported storage key: \(key)"
+            case .payloadTooLarge(let key, let size, let max):
+                return "Import payload for key \(key) is too large (\(size) bytes, max \(max))."
+            case .totalPayloadTooLarge(let size, let max):
+                return "Import payload is too large (\(size) bytes, max \(max))."
+            }
+        }
+    }
+
+    static let allowedImportKeys: Set<String> = [
+        "accentColor",
+        "apiConfig",
+        "apiProfiles",
+        "backgrounds",
+        "bookmarks",
+        "chatSessions",
+        "drafts",
+        "friends.groups",
+        "friends.meta",
+        "intimacy",
+        "knowledgeBase",
+        "knowledgeGraph.custom",
+        "memories",
+        "moments",
+        "personas.custom",
+        "social",
+        "userProfile",
+    ]
+
+    static let maxImportItemBytes = 2 * 1024 * 1024
+    static let maxImportTotalBytes = 20 * 1024 * 1024
+
     private let defaults: UserDefaults
     private let prefix = "chat-buddy:"
 
@@ -74,8 +114,37 @@ final class StorageService {
 
     /// Import data from a dictionary
     func importAll(_ data: [String: Data]) -> Int {
+        do {
+            return try importAllValidated(data)
+        } catch {
+            print("[StorageService] Import rejected: \(error)")
+            return 0
+        }
+    }
+
+    /// Import data with key + size validation.
+    @discardableResult
+    func importAllValidated(_ data: [String: Data]) throws -> Int {
         var count = 0
+        var totalBytes = 0
         for (key, value) in data {
+            guard Self.allowedImportKeys.contains(key) else {
+                throw ImportValidationError.keyNotAllowed(key)
+            }
+            guard value.count <= Self.maxImportItemBytes else {
+                throw ImportValidationError.payloadTooLarge(
+                    key: key,
+                    size: value.count,
+                    max: Self.maxImportItemBytes
+                )
+            }
+            totalBytes += value.count
+            guard totalBytes <= Self.maxImportTotalBytes else {
+                throw ImportValidationError.totalPayloadTooLarge(
+                    size: totalBytes,
+                    max: Self.maxImportTotalBytes
+                )
+            }
             defaults.set(value, forKey: prefixedKey(key))
             count += 1
         }

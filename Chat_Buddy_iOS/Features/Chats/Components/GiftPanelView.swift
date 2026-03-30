@@ -1,5 +1,26 @@
 import SwiftUI
 
+private extension View {
+    @ViewBuilder
+    func chatInlineNavigationTitle() -> some View {
+#if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+#else
+        self
+#endif
+    }
+}
+
+private extension ToolbarItemPlacement {
+    static var chatTopBarTrailing: ToolbarItemPlacement {
+#if os(iOS)
+        .topBarTrailing
+#else
+        .automatic
+#endif
+    }
+}
+
 struct GiftPanelView: View {
     @Environment(SocialService.self) private var social
     @Environment(AffinityService.self) private var affinity
@@ -44,9 +65,9 @@ struct GiftPanelView: View {
             }
             .padding(.top, DSSpacing.md)
             .navigationTitle(localization.t("gift_title"))
-            .navigationBarTitleDisplayMode(.inline)
+            .chatInlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .chatTopBarTrailing) {
                     Button(localization.t("done")) { dismiss() }
                 }
             }

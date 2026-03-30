@@ -15,6 +15,11 @@ import Foundation
 
     init() { load() }
 
+    /// Reload affinity scores from persisted storage.
+    func reloadFromStorage() {
+        load()
+    }
+
     // MARK: - Public
 
     /// Current score for a persona (0–100).

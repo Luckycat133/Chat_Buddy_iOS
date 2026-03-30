@@ -37,6 +37,9 @@ import SwiftUI
         // Increment affinity for this persona (5-minute cooldown enforced inside)
         affinityService.addChatIntimacy(for: persona.id)
         let intimacyLevel = affinityService.level(for: persona.id).rawValue
+        if affinityService.score(for: persona.id) >= 100 {
+            socialService?.onIntimacyMaxed()
+        }
 
         // Social: achievement + daily task tracking
         socialService?.onMessageSent(personaId: persona.id, chatStore: chatStore)
@@ -138,7 +141,8 @@ extension ChatViewModel {
         affinityService: AffinityService,
         draftService: DraftService,
         socialService: SocialService? = nil,
-        memoryService: MemoryService? = nil
+        memoryService: MemoryService? = nil,
+        toolExecutor: ToolExecutorService? = nil
     ) {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isTyping else { return }
@@ -166,7 +170,8 @@ extension ChatViewModel {
                 apiConfigStore: apiConfigStore,
                 aiLanguageCode: localization.resolvedAILanguage,
                 affinityService: affinityService,
-                memoryService: memoryService
+                memoryService: memoryService,
+                toolExecutor: toolExecutor
             )
         }
     }
@@ -178,7 +183,8 @@ extension ChatViewModel {
         apiConfigStore: APIConfigStore,
         aiLanguageCode: String,
         affinityService: AffinityService,
-        memoryService: MemoryService? = nil
+        memoryService: MemoryService? = nil,
+        toolExecutor: ToolExecutorService? = nil
     ) async {
         guard apiConfigStore.activeConfig.isValid else {
             errorMessage = "API not configured — please go to Settings → API."
@@ -206,7 +212,8 @@ extension ChatViewModel {
                     config: config,
                     aiLanguageCode: aiLanguageCode,
                     intimacyLevel: intimacyLevel,
-                    memoryService: memoryService
+                    memoryService: memoryService,
+                    toolExecutor: toolExecutor
                 )
 
                 for extracted in result.newMemories {

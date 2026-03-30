@@ -10,12 +10,14 @@ struct ChatView: View {
     @Environment(DraftService.self) private var draftService
     @Environment(AccentColorManager.self) private var accentManager
     @Environment(BackgroundStore.self) private var backgroundStore
+    @Environment(ThemeManager.self) private var themeManager
     @Environment(SocialService.self) private var socialService
     @Environment(MemoryService.self) private var memoryService
     @Environment(ToolExecutorService.self) private var toolExecutorService
 
     let sessionId: String
     let persona: Persona
+    let initialFocusMessageId: String? = nil
 
     @State private var viewModel = ChatViewModel()
     @State private var showClearAlert = false
@@ -24,11 +26,14 @@ struct ChatView: View {
     @State private var searchQuery = ""
     @State private var scrollToMessageId: String? = nil
     @State private var showGift = false
+    @State private var showRedPacket = false
     @State private var showGame = false
     @State private var gameType: GameType = .rps
     @State private var showMemories = false
+    @State private var showGroupDetails = false
+    @State private var forwardingMessage: ChatMessage? = nil
 
-    enum GameType { case rps, numberGuess }
+    enum GameType { case rps, numberGuess, trivia, idiom }
 
     private var session: ChatSession? { chatStore.session(id: sessionId) }
     private var allMessages: [ChatMessage] { session?.displayMessages ?? [] }
@@ -70,13 +75,17 @@ struct ChatView: View {
     private var isZhUI: Bool { localization.uiLanguage.resolved == .zh }
     private var currentScore: Int { affinityService.score(for: persona.id) }
     private var currentLevel: AffinityLevel { affinityService.level(for: persona.id) }
+    private var resolvedAnimation: AnimatedBackground {
+        if themeManager.animationIntensity == .none { return .none }
+        return backgroundStore.resolvedAnimation(for: sessionId)
+    }
 
     var body: some View {
         ZStack {
             // Animated wallpaper layer (gradient + optional particles)
             AnimatedBackgroundView(
                 preset: backgroundStore.resolvedPreset(for: sessionId),
-                animation: backgroundStore.resolvedAnimation(for: sessionId)
+                animation: resolvedAnimation
             )
 
             VStack(spacing: 0) {
@@ -162,6 +171,12 @@ struct ChatView: View {
                         Label(localization.t("gift_title"), systemImage: "gift.fill")
                     }
 
+                    Button {
+                        showRedPacket = true
+                    } label: {
+                        Label(isZhUI ? "红包" : "Red Packet", systemImage: "yensign.circle.fill")
+                    }
+
                     Menu {
                         Button {
                             gameType = .rps
@@ -174,6 +189,18 @@ struct ChatView: View {
                             showGame = true
                         } label: {
                             Label(localization.t("game_number"), systemImage: "number.circle.fill")
+                        }
+                        Button {
+                            gameType = .trivia
+                            showGame = true
+                        } label: {
+                            Label(isZhUI ? "问答挑战" : "Trivia Quiz", systemImage: "brain.head.profile")
+                        }
+                        Button {
+                            gameType = .idiom
+                            showGame = true
+                        } label: {
+                            Label(isZhUI ? "成语接龙" : "Idiom Chain", systemImage: "text.book.closed.fill")
                         }
                     } label: {
                         Label(localization.t("game_title"), systemImage: "gamecontroller.fill")
@@ -202,6 +229,14 @@ struct ChatView: View {
                         showMemories = true
                     } label: {
                         Label(localization.t("memories_title"), systemImage: "brain.head.profile")
+                    }
+
+                    if isGroup {
+                        Button {
+                            showGroupDetails = true
+                        } label: {
+                            Label(isZhUI ? "群聊详情" : "Group Details", systemImage: "person.2.crop.square.stack")
+                        }
                     }
 
                     Divider()
@@ -241,20 +276,63 @@ struct ChatView: View {
             GiftPanelView(sessionId: sessionId, persona: persona)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showRedPacket) {
+            RedPacketSheet { amount, blessing in
+                guard socialService.spendPoints(amount) else {
+                    viewModel.errorMessage = isZhUI ? "积分不足，无法发送红包" : "Not enough points to send red packet"
+                    return
+                }
+                let message = blessing.isEmpty
+                    ? (isZhUI ? "恭喜发财" : "Best wishes")
+                    : blessing
+                chatStore.appendMessage(
+                    ChatMessage(role: .user, content: "[RED_PACKET:\(amount):\(message)]"),
+                    to: sessionId
+                )
+            }
+            .presentationDetents([.medium])
+        }
         .sheet(isPresented: $showGame) {
             switch gameType {
             case .rps:         RockPaperScissorsView()
             case .numberGuess: NumberGuessView()
+            case .trivia:
+                TriviaQuizView { score, total in
+                    chatStore.appendMessage(
+                        ChatMessage(role: .user, content: "[GAME:TRIVIA:\(score)/\(total)]"),
+                        to: sessionId
+                    )
+                }
+            case .idiom:
+                IdiomChainView { result, rounds in
+                    chatStore.appendMessage(
+                        ChatMessage(role: .user, content: "[GAME:IDIOM:\(result):\(rounds)]"),
+                        to: sessionId
+                    )
+                }
             }
         }
         .sheet(isPresented: $showMemories) {
             MemoriesView(personaId: persona.id)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showGroupDetails) {
+            NavigationStack {
+                GroupDetailsView(sessionId: sessionId)
+            }
+        }
+        .sheet(item: $forwardingMessage) { message in
+            ForwardMessageSheet(message: message, sourceSessionId: sessionId) { targetIds in
+                chatStore.forwardMessage(message, to: targetIds, sourceSessionId: sessionId)
+            }
+        }
         .onAppear {
             if let draft = draftService.draft(for: sessionId) {
                 viewModel.inputText = draft.text
                 viewModel.quotedMessageId = draft.quotedMessageId
+            }
+            if let initialFocusMessageId {
+                scrollToMessageId = initialFocusMessageId
             }
         }
         .task(id: viewModel.inputText) {
@@ -311,10 +389,15 @@ struct ChatView: View {
                         MessageBubble(
                             message: msg,
                             messages: allMessages,
+                            polls: session?.polls ?? [],
                             persona: persona,
                             sessionId: sessionId,
                             onQuote: { quoted in viewModel.quotedMessageId = quoted.id },
-                            onDelete: { msgId in chatStore.deleteMessage(id: msgId, in: sessionId) }
+                            onDelete: { msgId in chatStore.deleteMessage(id: msgId, in: sessionId) },
+                            onForward: { msg in forwardingMessage = msg },
+                            onVotePoll: { pollId, optionId in
+                                _ = chatStore.votePoll(in: sessionId, pollId: pollId, optionId: optionId)
+                            }
                         )
                         .id(msg.id)
                     }
@@ -449,7 +532,8 @@ struct ChatView: View {
                 affinityService: affinityService,
                 draftService: draftService,
                 socialService: socialService,
-                memoryService: memoryService
+                memoryService: memoryService,
+                toolExecutor: toolExecutorService
             )
         } else {
             viewModel.sendMessage(

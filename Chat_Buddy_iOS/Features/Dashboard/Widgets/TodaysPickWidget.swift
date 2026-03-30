@@ -3,9 +3,11 @@ import SwiftUI
 struct TodaysPickWidget: View {
     @Environment(LocalizationManager.self) private var localization
     let persona: Persona
+    var onTap: () -> Void = {}
 
     var body: some View {
-        GlassCard(cornerRadius: DSRadius.xl) {
+        Button(action: onTap) {
+            GlassCard(cornerRadius: DSRadius.xl) {
             HStack(spacing: DSSpacing.md) {
                 // Avatar
                 ZStack {
@@ -55,5 +57,7 @@ struct TodaysPickWidget: View {
                 }
             }
         }
+        }
+        .buttonStyle(.plain)
     }
 }

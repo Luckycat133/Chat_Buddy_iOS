@@ -3,7 +3,17 @@ import SwiftUI
 /// Animated three-dot typing indicator shown while the AI is generating a response
 struct TypingIndicator: View {
     let persona: Persona
+    @Environment(ThemeManager.self) private var themeManager
     @State private var animating = false
+
+    private var shouldAnimate: Bool {
+        animating && themeManager.animationIntensity != .none
+    }
+
+    private var dotAnimation: Animation {
+        let multiplier = max(0.35, themeManager.animationIntensity.durationMultiplier)
+        return .easeInOut(duration: 0.4 / multiplier).repeatForever()
+    }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: DSSpacing.xs) {
@@ -23,12 +33,11 @@ struct TypingIndicator: View {
                     Circle()
                         .fill(Color.secondary.opacity(0.5))
                         .frame(width: 7, height: 7)
-                        .offset(y: animating ? -5 : 0)
+                        .offset(y: shouldAnimate ? -5 : 0)
                         .animation(
-                            .easeInOut(duration: 0.4)
-                                .repeatForever()
+                            dotAnimation
                                 .delay(Double(i) * 0.13),
-                            value: animating
+                            value: shouldAnimate
                         )
                 }
             }

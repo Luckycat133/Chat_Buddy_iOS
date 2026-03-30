@@ -9,6 +9,7 @@ struct BackgroundPickerView: View {
 
     private var isZh: Bool { localization.uiLanguage.resolved == .zh }
     private let columns = [GridItem(.adaptive(minimum: 90), spacing: DSSpacing.sm)]
+    private let animationColumns = [GridItem(.adaptive(minimum: 110), spacing: DSSpacing.sm)]
 
     var body: some View {
         ScrollView {
@@ -23,6 +24,20 @@ struct BackgroundPickerView: View {
                     }
                 }
                 .padding(.horizontal, DSSpacing.md)
+
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                    Text(localization.t("bg_animated_title"))
+                        .font(DSTypography.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, DSSpacing.md)
+
+                    LazyVGrid(columns: animationColumns, spacing: DSSpacing.sm) {
+                        ForEach(AnimatedBackground.allCases, id: \.self) { animation in
+                            animationCard(animation)
+                        }
+                    }
+                    .padding(.horizontal, DSSpacing.md)
+                }
             }
             .padding(.vertical, DSSpacing.md)
         }
@@ -95,6 +110,13 @@ struct BackgroundPickerView: View {
         return backgroundStore.globalPresetId == preset.id
     }
 
+    private func isCurrentAnimation(_ animation: AnimatedBackground) -> Bool {
+        if let sid = sessionId {
+            return backgroundStore.resolvedAnimation(for: sid) == animation
+        }
+        return backgroundStore.globalAnimation == animation
+    }
+
     private func presetFill(_ preset: ChatBackgroundPreset) -> AnyShapeStyle {
         if preset.isDefault {
             return AnyShapeStyle(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.93))
@@ -106,5 +128,35 @@ struct BackgroundPickerView: View {
                 endPoint: .bottomTrailing
             )
         )
+    }
+
+    @ViewBuilder
+    private func animationCard(_ animation: AnimatedBackground) -> some View {
+        let isSelected = isCurrentAnimation(animation)
+        Button {
+            if let sid = sessionId {
+                backgroundStore.setChatAnimation(sessionId: sid, animation: animation)
+            } else {
+                backgroundStore.setGlobalAnimation(animation)
+            }
+        } label: {
+            HStack(spacing: DSSpacing.xs) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                Text(localization.t(animation.localizationKey))
+                    .font(DSTypography.caption2)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, DSSpacing.sm)
+            .padding(.vertical, DSSpacing.xs)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: DSRadius.md))
+            .overlay(
+                RoundedRectangle(cornerRadius: DSRadius.md)
+                    .strokeBorder(isSelected ? Color.accentColor.opacity(0.45) : .clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }

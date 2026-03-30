@@ -8,6 +8,11 @@ import Foundation
 
     init() { load() }
 
+    /// Reload background preferences from persisted storage.
+    func reloadFromStorage() {
+        load()
+    }
+
     // MARK: - Resolve
 
     func resolvedPreset(for sessionId: String) -> ChatBackgroundPreset {

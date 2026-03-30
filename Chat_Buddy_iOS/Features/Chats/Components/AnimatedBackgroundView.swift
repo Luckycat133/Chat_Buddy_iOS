@@ -24,7 +24,7 @@ enum AnimatedBackground: String, CaseIterable, Codable {
 
     var localizationKey: String {
         switch self {
-        case .none:   return "none"
+        case .none:   return "bg_animated_none"
         case .aurora: return "bg_animated_aurora"
         case .stars:  return "bg_animated_stars"
         case .snow:   return "bg_animated_snow"

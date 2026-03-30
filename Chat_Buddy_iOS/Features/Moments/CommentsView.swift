@@ -94,7 +94,9 @@ struct CommentsView: View {
                 .background(.ultraThinMaterial)
             }
             .navigationTitle(localization.t("moments_comments") + " (\(comments.count))")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
     }
 

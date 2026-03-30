@@ -5,6 +5,7 @@ struct AchievementsView: View {
     @Environment(LocalizationManager.self) private var localization
     @State private var selectedCategory: AchievementCategory? = nil
     @State private var showCheckIn = false
+    @State private var showLeaderboard = false
 
     private var isZh: Bool { localization.uiLanguage.resolved == .zh }
 
@@ -27,6 +28,7 @@ struct AchievementsView: View {
             }
             .navigationTitle(localization.t("achievements_title"))
             .toolbar {
+                #if os(iOS)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showCheckIn = true
@@ -34,9 +36,35 @@ struct AchievementsView: View {
                         Image(systemName: "calendar.badge.checkmark")
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showLeaderboard = true
+                    } label: {
+                        Image(systemName: "chart.bar.fill")
+                    }
+                }
+                #else
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        showCheckIn = true
+                    } label: {
+                        Image(systemName: "calendar.badge.checkmark")
+                    }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        showLeaderboard = true
+                    } label: {
+                        Image(systemName: "chart.bar.fill")
+                    }
+                }
+                #endif
             }
             .sheet(isPresented: $showCheckIn) {
                 DailyCheckInView()
+            }
+            .sheet(isPresented: $showLeaderboard) {
+                NavigationStack { LeaderboardView() }
             }
         }
     }

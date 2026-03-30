@@ -31,6 +31,12 @@ xcodebuild -project Chat_Buddy_iOS.xcodeproj \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   build
 
+# Run tests
+xcodebuild -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  test
+
 # Open in Xcode
 open Chat_Buddy_iOS.xcodeproj
 ```
@@ -98,9 +104,10 @@ Chat_Buddy_iOS/
 │       └── DataImporter.swift    # JSON restore via fileImporter
 ├── Models/
 │   ├── Persona.swift             # Persona struct + AgentType enum
-│   ├── PersonaStore.swift        # 13 social companions + 6 task agents
+│   ├── PersonaStore.swift        # 13 social companions + 6 task agents + custom personas
 │   ├── APIProfile.swift          # Saved API configuration profile
-│   └── ChatMessage.swift         # OpenAI-compatible message format
+│   ├── ChatMessage.swift         # OpenAI-compatible message format
+│   └── ChatPoll.swift            # Poll model for group chat voting
 ├── Theme/
 │   ├── DesignTokens.swift        # DSTypography / DSSpacing / DSRadius / DSShadow
 │   ├── ThemeManager.swift        # dark/light/system + OLED + animation intensity
@@ -115,25 +122,54 @@ Chat_Buddy_iOS/
 │   ├── Dashboard/
 │   │   ├── DashboardView.swift   # 2-column LazyVGrid bento layout
 │   │   ├── DashboardViewModel.swift
-│   │   └── Widgets/              # RecentChats, Stats, QuickActions, TodaysPick, Friends
+│   │   └── Widgets/              # RecentChats, Stats, QuickActions, TodaysPick, Social
+│   ├── Achievements/
+│   │   ├── AchievementsView.swift
+│   │   ├── DailyCheckInView.swift
+│   │   └── LeaderboardView.swift # Points/intimacy/check-in/achievements ranking
+│   ├── Friends/
+│   │   ├── FriendsView.swift     # Search, star, group, custom friend CRUD
+│   │   └── FriendGroupsView.swift # Friend group management
+│   ├── Agents/
+│   │   ├── AgentsView.swift      # Agent list + custom agent CRUD
+│   │   └── AgentWorkspaceView.swift # Multi-topic agent workspace
 │   ├── Settings/
 │   │   ├── SettingsView.swift    # Main Form with sections
 │   │   ├── Appearance/           # ThemeMode, OLED, AccentColor, AnimationIntensity
 │   │   ├── Language/             # LanguagePicker, AILanguagePicker
 │   │   ├── APIConfig/            # APIConfigView, ProfileList, ConnectivityTest
+│   │   ├── Advanced/             # GlobalMessageSearch, KnowledgeBase, ModelSwitcher,
+│   │   │                         #   KnowledgeGraph, LearningReport
 │   │   └── Data/                 # ExportImport, About
 │   ├── Chats/
-│   │   └── ChatsPlaceholderView.swift
+│   │   ├── ChatsView.swift
+│   │   ├── ChatView.swift
+│   │   ├── ChatViewModel.swift
+│   │   ├── Components/           # MessageInput, Bubble, Typing, Gift/Game, Background,
+│   │   │                         #   RedPacket, TriviaQuiz, IdiomChain, PollComposer
+│   │   ├── BookmarksSheet.swift
+│   │   ├── GroupPickerSheet.swift
+│   │   ├── ForwardMessageSheet.swift  # Message forwarding to other sessions
+│   │   ├── GroupDetailsView.swift     # Group chat details/settings/polls
+│   │   └── MemoriesView.swift
 │   └── Moments/
-│       └── MomentsPlaceholderView.swift
+│       ├── MomentsView.swift
+│       ├── MomentCardView.swift
+│       ├── PostComposerView.swift
+│       ├── CommentsView.swift
+│       └── RepostSheet.swift
 ├── SharedViews/
 │   ├── GlassCard.swift
 │   ├── BentoCardView.swift
-│   └── SettingRow.swift
+│   ├── SettingRow.swift
+│   └── CustomPersonaEditorSheet.swift # Create/edit custom friends & agents
 └── Extensions/
     ├── Color+Extensions.swift    # Color(hex:) init
     ├── View+GlassEffect.swift    # .dsShadow(), .if()
     └── UserDefaults+Keys.swift   # Namespaced key constants
+
+Chat_Buddy_iOSTests/              # Unit tests
+Chat_Buddy_iOSUITests/            # UI + launch performance tests
 ```
 
 ---
@@ -177,6 +213,7 @@ Access in views:
 
 - `ThemeManager.mode`: `.system` / `.light` / `.dark`
 - `ThemeManager.oledEnabled`: Pure black background in dark mode
+- `ThemeManager.animationIntensity`: Controls animation enablement and speed
 - `AccentColorManager.currentColor`: Applied via `.tint()` at root
 - `ThemeManager.resolvedColorScheme`: Applied via `.preferredColorScheme()` at root
 - **Liquid Glass**: `.liquidGlass(cornerRadius:)` modifier (iOS 26 `.glassEffect`, fallback `.ultraThinMaterial`)
@@ -215,8 +252,20 @@ All data stored in `UserDefaults.standard` with `chat-buddy:` prefix via `Storag
 | `chat-buddy:oledEnabled` | Bool |
 | `chat-buddy:animationIntensity` | `AnimationIntensity.rawValue` |
 | `chat-buddy:accentColor` | `AccentColorState` (Codable JSON) |
+| `chat-buddy:bookmarks` | `[Bookmark]` |
+| `chat-buddy:drafts` | `[String: DraftEntry]` |
 | `chatSessions` | `[ChatSession]` array (no prefix — direct key) |
 | `chat-buddy:intimacy` | `[String: Int]` JSON (personaId → affinity score 0–100) |
+| `chat-buddy:moments` | `MomentsData` |
+| `chat-buddy:backgrounds` | `BackgroundStore.StorageData` |
+| `chat-buddy:userProfile` | `UserProfile` |
+| `chat-buddy:social` | `SocialService.StorageData` |
+| `chat-buddy:memories` | `MemoriesData` |
+| `chat-buddy:friends.groups` | `[FriendGroup]` friend group definitions |
+| `chat-buddy:friends.meta` | `[String: FriendMeta]` star/group membership |
+| `chat-buddy:knowledgeBase` | Knowledge base documents |
+| `chat-buddy:knowledgeGraph.custom` | Custom knowledge graph nodes |
+| `personas.custom` | `[Persona]` user-created custom personas |
 
 ---
 
@@ -289,3 +338,8 @@ The iOS app is ported from the web app located at `Chat_Buddy_Web/src/`. Key ref
 | T09 — Immersive Background System | ✅ Done |
 | T10 — Social & Interaction Features | ✅ Done |
 | T11 — Character Memory System | ✅ Done |
+| T12 — Chat Advanced Interactions (forward, red packet, trivia, idiom, polls, group details) | ✅ Done |
+| T13 — Settings Advanced Panels (global search, knowledge base, model switcher, knowledge graph, learning report) | ✅ Done |
+| T14 — Social Pages (friends, friend groups, leaderboard, agents, agent workspace) | ✅ Done |
+| T15 — Custom Persona/Agent CRUD | ✅ Done |
+| T16 — Data Import/Export Extended Validation | ✅ Done |

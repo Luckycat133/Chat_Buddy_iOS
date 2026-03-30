@@ -24,7 +24,7 @@ struct BookmarksSheet: View {
                 }
             }
             .navigationTitle(localization.t("bookmarks"))
-            .navigationBarTitleDisplayMode(.inline)
+            .chatInlineNavigationTitle()
         }
     }
 
@@ -72,5 +72,16 @@ struct BookmarksSheet: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxHeight: .infinity)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func chatInlineNavigationTitle() -> some View {
+#if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+#else
+        self
+#endif
     }
 }

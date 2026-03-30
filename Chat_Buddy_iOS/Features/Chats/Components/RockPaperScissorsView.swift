@@ -45,9 +45,9 @@ struct RockPaperScissorsView: View {
             }
             .padding(DSSpacing.lg)
             .navigationTitle(isZh ? "石头剪刀布" : "Rock Paper Scissors")
-            .navigationBarTitleDisplayMode(.inline)
+            .chatInlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .chatTopBarTrailing) {
                     Button(localization.t("done")) {
                         social.onGamePlayed()
                         dismiss()
@@ -205,5 +205,26 @@ struct RockPaperScissorsView: View {
         outcome = nil
         countdown = 0
         isCountingDown = false
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func chatInlineNavigationTitle() -> some View {
+#if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+#else
+        self
+#endif
+    }
+}
+
+private extension ToolbarItemPlacement {
+    static var chatTopBarTrailing: ToolbarItemPlacement {
+#if os(iOS)
+        return .topBarTrailing
+#else
+        return .primaryAction
+#endif
     }
 }

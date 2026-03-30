@@ -23,15 +23,15 @@ struct Chat_Buddy_iOSApp: App {
     @State private var backgroundStore = BackgroundStore()
     @State private var userProfileStore = UserProfileStore()
     @State private var socialService = SocialService()
+    @State private var friendService = FriendService()
     @State private var memoryService = MemoryService()
     @State private var toolExecutorService = ToolExecutorService()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        // NOTE: BGTask registration must happen before the first scene connects.
-        // The stores are created above with default values; the registration captures
-        // them lazily via the handlers, so this is fine.
+        // BGTask registration should happen as early as possible.
         // Info.plist must include BGTaskSchedulerPermittedIdentifiers with both keys.
+        MomentsBackgroundScheduler.register()
     }
 
     var body: some Scene {
@@ -56,21 +56,26 @@ struct Chat_Buddy_iOSApp: App {
             .environment(backgroundStore)
             .environment(userProfileStore)
             .environment(socialService)
+            .environment(friendService)
             .environment(memoryService)
             .environment(toolExecutorService)
             .tint(accentColorManager.currentColor)
             .preferredColorScheme(themeManager.resolvedColorScheme)
-            // Register and schedule BGTasks after stores are accessible
             .onAppear {
-                MomentsBackgroundScheduler.register(
+                MomentsBackgroundScheduler.configure(
                     momentsStore: momentsStore,
                     apiConfigStore: apiConfigStore
                 )
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MomentsBackgroundScheduler.momentsDataDidChange)) { _ in
+                momentsStore.reloadFromStorage()
             }
             // Schedule next BGTask invocations when app moves to background
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .background {
                     MomentsBackgroundScheduler.scheduleAll()
+                } else if newPhase == .active {
+                    momentsStore.reloadFromStorage()
                 }
             }
         }

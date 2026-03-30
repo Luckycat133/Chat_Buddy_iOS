@@ -2,7 +2,7 @@
 
 # Chat Buddy iOS
 
-![iOS 17+](https://img.shields.io/badge/iOS-17.0+-black?style=flat&logo=apple)
+![iOS 26+](https://img.shields.io/badge/iOS-26.0+-black?style=flat&logo=apple)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-100%25-blue?style=flat&logo=swift)
 ![License MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
@@ -17,17 +17,34 @@
 ## 🛠 Tech Stack
 
 - **UI Framework**: SwiftUI
-- **Core Engine**: Swift Concurrency (async/await)
-- **Background Processes**: BackgroundTasks Server
+- **State Model**: `@Observable` + Environment injection
+- **Core Engine**: Swift Concurrency (`actor`, `async/await`)
+- **Background Processes**: iOS `BackgroundTasks` (`BGAppRefreshTask`, `BGProcessingTask`)
 - **Visual Effects**: SwiftUI Canvas + SpriteKit
-- **Data Persistence**: Native generic JSON encoders with backward compatibility mapping
+- **Data Persistence**: `StorageService` (`UserDefaults`) + JSON export/import backup
 
 ## 📦 How to Build
 
 1. Clone the repository.
-2. Open `Chat_Buddy_iOS.xcodeproj` in Xcode (requires Xcode 15+).
+2. Open `Chat_Buddy_iOS.xcodeproj` in Xcode (requires Xcode 26.2+).
 3. The project uses standard iOS frameworks and requires no complex third-party setup.
 4. Set your run destination and hit `Cmd + R`.
+
+### Terminal Build & Test
+
+```bash
+# Build
+xcodebuild -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  build
+
+# Test
+xcodebuild -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  test
+```
 
 ## 📄 License
 

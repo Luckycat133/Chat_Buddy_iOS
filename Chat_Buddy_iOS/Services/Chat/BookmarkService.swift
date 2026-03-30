@@ -9,6 +9,11 @@ import Foundation
         bookmarks = StorageService.shared.get(Self.key, default: [])
     }
 
+    /// Reload bookmarks from persisted storage.
+    func reloadFromStorage() {
+        bookmarks = StorageService.shared.get(Self.key, default: [])
+    }
+
     func isBookmarked(_ messageId: String) -> Bool {
         bookmarks.contains { $0.messageId == messageId }
     }

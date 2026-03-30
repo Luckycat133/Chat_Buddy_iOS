@@ -52,10 +52,12 @@ struct SessionAvatarView: View {
                 )
 
             let cols = displayed.count <= 2 ? 1 : 2
+            let rows = Array(displayed.enumerated()).chunked(by: cols)
             VStack(spacing: gap) {
-                ForEach(Array(displayed.enumerated().chunked(by: cols)), id: \.first?.offset) { row in
+                ForEach(rows, id: \.first?.offset) { row in
                     HStack(spacing: gap) {
-                        ForEach(row, id: \.offset) { _, persona in
+                        ForEach(row, id: \.offset) { item in
+                            let persona = item.element
                             ZStack {
                                 Circle().fill(persona.accentColor.opacity(0.25))
                                 Text(String(persona.name.prefix(1)))

@@ -45,9 +45,9 @@ struct NumberGuessView: View {
             }
             .padding(DSSpacing.lg)
             .navigationTitle(isZh ? "猜数字 (1–100)" : "Number Guess (1–100)")
-            .navigationBarTitleDisplayMode(.inline)
+            .chatInlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .chatTopBarTrailing) {
                     Button(localization.t("done")) {
                         social.onGamePlayed()
                         dismiss()
@@ -132,7 +132,9 @@ struct NumberGuessView: View {
     private var inputRow: some View {
         HStack(spacing: DSSpacing.md) {
             TextField(isZh ? "输入数字" : "Enter number", text: $guessText)
+#if os(iOS)
                 .keyboardType(.numberPad)
+#endif
                 .font(.system(size: 28, weight: .semibold, design: .rounded))
                 .multilineTextAlignment(.center)
                 .focused($isFocused)
@@ -190,5 +192,26 @@ struct NumberGuessView: View {
                 feedback = .tooLow
             }
         }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func chatInlineNavigationTitle() -> some View {
+#if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+#else
+        self
+#endif
+    }
+}
+
+private extension ToolbarItemPlacement {
+    static var chatTopBarTrailing: ToolbarItemPlacement {
+#if os(iOS)
+        return .topBarTrailing
+#else
+        return .primaryAction
+#endif
     }
 }

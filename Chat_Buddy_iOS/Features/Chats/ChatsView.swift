@@ -70,14 +70,14 @@ struct ChatsView: View {
                 if !pinnedSessions.isEmpty {
                     sectionHeader(localization.t("chats_pinned"), systemImage: "pin.fill")
                     ForEach(pinnedSessions) { session in
-                        if let persona = PersonaStore.persona(byId: session.personaId) {
+                        if let persona = PersonaStore.persona(byId: session.primaryPersonaId) {
                             sessionRow(session: session, persona: persona)
                         }
                     }
                 }
                 // Unpinned section
                 ForEach(unpinnedSessions) { session in
-                    if let persona = PersonaStore.persona(byId: session.personaId) {
+                    if let persona = PersonaStore.persona(byId: session.primaryPersonaId) {
                         sessionRow(session: session, persona: persona)
                     }
                 }

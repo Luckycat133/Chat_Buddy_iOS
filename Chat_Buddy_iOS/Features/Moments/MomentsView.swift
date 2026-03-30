@@ -10,6 +10,7 @@ struct MomentsView: View {
     @Environment(MomentsStore.self) private var store
     @Environment(APIConfigStore.self) private var configStore
     @Environment(LocalizationManager.self) private var localization
+    @Environment(SocialService.self) private var social
 
     @State private var showComposer = false
     @State private var selectedPostId: PostID? = nil
@@ -66,8 +67,9 @@ struct MomentsView: View {
                 .padding(.top, DSSpacing.sm)
                 .padding(.bottom, DSSpacing.xl)
             }
-            .navigationTitle("朋友圈")
+            .navigationTitle(localization.t("nav_moments"))
             .toolbar {
+                #if os(iOS)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showComposer = true
@@ -75,6 +77,15 @@ struct MomentsView: View {
                         Image(systemName: "square.and.pencil")
                     }
                 }
+                #else
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        showComposer = true
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                }
+                #endif
             }
             .sheet(isPresented: $showComposer) {
                 PostComposerView(isPresented: $showComposer) { text, imageData, location in
@@ -84,6 +95,8 @@ struct MomentsView: View {
                         location: location,
                         authorId: "user-me"
                     )
+                    let totalUserPosts = store.posts.filter { $0.authorId == "user-me" }.count
+                    social.onMomentsPosted(total: totalUserPosts)
                     Task {
                         await MomentsOrchestrator.reactToUserPost(
                             postId: postId,

@@ -23,14 +23,22 @@ open Chat_Buddy_iOS.xcodeproj
 
 Select **iPhone 17 Pro** simulator and press **⌘R** to build and run.
 
-### Build from Terminal
+### Build & Test from Terminal
 
 ```bash
+# Build
 xcodebuild \
   -project Chat_Buddy_iOS.xcodeproj \
   -scheme Chat_Buddy_iOS \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   build
+
+# Test
+xcodebuild \
+  -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  test
 ```
 
 ### Project Structure Overview
@@ -45,12 +53,15 @@ xcodebuild \
 | `Services/Moments/` | MomentsStore, MomentsService, MomentsOrchestrator |
 | `Services/Background/` | BackgroundStore — gradient preset persistence and resolution |
 | `Services/Social/` | UserProfileStore, SocialService — points, achievements, check-ins |
+| `Services/Memory/` | MemoryService, MemoryInjector — long-term memory persistence/injection |
 | `Models/` | Domain types: Persona, ChatMessage, ChatSession, MomentPost, Bookmark, APIConfig, UserProfile, ChatBackgroundPreset, Achievement types |
 | `Theme/` | Design tokens, theme/accent managers, glass effects |
 | `Navigation/` | Tab enum, root TabView, onboarding |
 | `Features/` | Feature modules (Dashboard, Settings, Chats, Moments) |
 | `SharedViews/` | Reusable card and row components |
 | `Extensions/` | Color hex init, View helpers, UserDefaults keys |
+| `Chat_Buddy_iOSTests/` | Unit tests |
+| `Chat_Buddy_iOSUITests/` | UI and launch performance tests |
 
 ### Configuring the API
 
@@ -95,6 +106,13 @@ Text(localization.t("moments_view_all", params: ["n": "5"]))
 3. Add any new `UserDefaults.Keys` constants to `Extensions/UserDefaults+Keys.swift`
 4. Persist state in the relevant manager's `didSet`
 
+### Data Backup & Restore
+
+- **Full storage export**: `DataExporter` includes raw `storageData` from `StorageService.exportAll()`, so chats, moments, social, memory, bookmarks, drafts, and backgrounds are included.
+- **Import order matters**: `DataImporter` restores `storageData` first, then syncs API state via `APIConfigStore.reloadFromStorage()`, then applies UI settings.
+- **Onboarding state is included**: `hasCompletedOnboarding` is now part of backup settings.
+- **Feature entry point**: Use **Settings → Data Management → Export / Import** (`ExportImportView`).
+
 ### Working with the Moments Feed
 
 The Moments tab is fully AI-driven. Key points for development:
@@ -109,16 +127,19 @@ The Moments tab is fully AI-driven. Key points for development:
 
 - **10 gradient presets** defined in `ChatBackgroundPreset.presets` (id: `none`, `aurora`, `sunset`, `ocean`, `rose`, `forest`, `midnight`, `sakura`, `golden`, `cosmos`).
 - **Resolution**: `BackgroundStore.resolvedPreset(for: sessionId)` returns the per-chat preset if set, otherwise falls back to the global preset.
-- **Picker**: `BackgroundPickerView` accepts an optional `sessionId`. Without it, it operates in global mode. Pass a sessionId from `ChatView` for per-chat mode.
+- **Animation resolution**: `BackgroundStore.resolvedAnimation(for: sessionId)` returns the per-chat animation if set, else global animation.
+- **Picker**: `BackgroundPickerView` accepts an optional `sessionId`. Without it, it operates in global mode; with `sessionId`, it configures per-chat gradient + animation.
+- **Animation intensity gate**: `ThemeManager.animationIntensity == .none` forces `ChatView` animation to `.none` and disables typing indicator animation.
 - **ZStack pattern** in `ChatView`:
   ```swift
   ZStack {
-      if let gradient = backgroundStore.resolvedPreset(for: sessionId).gradient() {
-          gradient.ignoresSafeArea()
-      }
-      VStack { /* message list */ }
+      AnimatedBackgroundView(
+          preset: backgroundStore.resolvedPreset(for: sessionId),
+          animation: resolvedAnimation
+      )
+      VStack { /* message list + input */ }
   }
-  ```
+```
 - **Reset**: Clear `chat-buddy:backgrounds` from UserDefaults to reset all background settings.
 
 ### Working with Social Features
@@ -129,6 +150,8 @@ The Moments tab is fully AI-driven. Key points for development:
 - **Check-in** call `SocialService.checkIn()` — returns points earned. Guard on `canCheckInToday` before showing the button.
 - **Gift integration**: After sending a gift, call `AffinityService.addBoost(gift.intimacyBoost, for: personaId)` (bypasses the 5-min cooldown) and `SocialService.onGiftSent(intimacyAfter:)`.
 - **Mini-games**: On game end, call `SocialService.addPoints(winPoints)` for a win and `SocialService.onGamePlayed()` regardless of result (updates `task_game` daily task).
+- **Moments hooks**: On a newly-added like, call `SocialService.onMomentLiked()`. After creating a user post, call `SocialService.onMomentsPosted(total:)`.
+- **Intimacy milestone hook**: When affinity reaches 100, call `SocialService.onIntimacyMaxed()`.
 - **SocialWidget** on the Dashboard reads `SocialService` via `@Environment` — no prop drilling needed.
 
 ### Theming
@@ -179,14 +202,22 @@ open Chat_Buddy_iOS.xcodeproj
 
 选择 **iPhone 17 Pro** 模拟器，按 **⌘R** 构建并运行。
 
-### 终端构建
+### 终端构建与测试
 
 ```bash
+# 构建
 xcodebuild \
   -project Chat_Buddy_iOS.xcodeproj \
   -scheme Chat_Buddy_iOS \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   build
+
+# 测试
+xcodebuild \
+  -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  test
 ```
 
 ### 配置 API
@@ -212,12 +243,15 @@ xcodebuild \
 | `Services/Moments/` | MomentsStore、MomentsService、MomentsOrchestrator |
 | `Services/Background/` | BackgroundStore — 渐变预设持久化与解析 |
 | `Services/Social/` | UserProfileStore、SocialService — 积分、成就、签到 |
+| `Services/Memory/` | MemoryService、MemoryInjector — 长期记忆持久化与提示注入 |
 | `Models/` | 领域类型：Persona、ChatMessage、MomentPost、UserProfile、ChatBackgroundPreset、成就相关类型 |
 | `Theme/` | 设计令牌、主题/强调色管理器、玻璃效果 |
 | `Navigation/` | 标签枚举、根部 TabView、新手引导 |
 | `Features/` | 功能模块（Dashboard、Settings、Chats、Moments、Achievements） |
 | `SharedViews/` | 可复用卡片和行组件 |
 | `Extensions/` | Color hex 初始化、View 辅助、UserDefaults 键 |
+| `Chat_Buddy_iOSTests/` | 单元测试 |
+| `Chat_Buddy_iOSUITests/` | UI 与启动性能测试 |
 
 ### 添加新 AI 角色
 
@@ -234,11 +268,20 @@ xcodebuild \
 3. 在 SwiftUI 视图中使用 `localization.t("your_key")`
 4. 参数化字符串使用 `{param}` 语法：`"你好，{name}！"`
 
+### 数据备份与恢复
+
+- **全量导出**：`DataExporter` 现在会导出 `StorageService.exportAll()` 的 `storageData` 原始数据，覆盖聊天、朋友圈、社交、记忆、收藏、草稿、背景等。
+- **导入顺序**：`DataImporter` 先恢复 `storageData`，再执行 `APIConfigStore.reloadFromStorage()` 同步内存状态，最后应用界面设置。
+- **引导状态**：`hasCompletedOnboarding` 已纳入备份设置。
+- **入口**：在 **设置 → 数据管理 → 导出/导入**（`ExportImportView`）。
+
 ### 聊天背景开发要点
 
 - **10 种渐变预设** 定义于 `ChatBackgroundPreset.presets`（id：`none` / `aurora` / `sunset` / `ocean` / `rose` / `forest` / `midnight` / `sakura` / `golden` / `cosmos`）。
 - **解析逻辑**：`BackgroundStore.resolvedPreset(for: sessionId)` 优先返回每聊天预设，未设置时回退到全局预设。
-- **选择器**：`BackgroundPickerView` 接受可选 `sessionId`。不传时为全局模式，从 `ChatView` 传入时为每聊天模式。
+- **动画解析**：`BackgroundStore.resolvedAnimation(for: sessionId)` 优先返回每聊天动画，未设置时回退到全局动画。
+- **选择器**：`BackgroundPickerView` 接受可选 `sessionId`。不传时为全局模式；传入后可配置该聊天的渐变与动画。
+- **动画强度兜底**：当 `ThemeManager.animationIntensity == .none` 时，`ChatView` 会强制关闭背景动画，并停用打字指示器动画。
 - **重置**：清除 UserDefaults 的 `chat-buddy:backgrounds` 键可重置所有背景设置。
 
 ### 社交功能开发要点
@@ -249,6 +292,8 @@ xcodebuild \
 - **签到**：调用 `SocialService.checkIn()`，返回获得的积分。显示按钮前先检查 `canCheckInToday`。
 - **礼物集成**：发送礼物后调用 `AffinityService.addBoost(gift.intimacyBoost, for: personaId)`（绕过5分钟冷却）及 `SocialService.onGiftSent(intimacyAfter:)`。
 - **小游戏**：游戏结束时，胜利调用 `SocialService.addPoints(winPoints)`，无论胜负均调用 `SocialService.onGamePlayed()`（更新 `task_game` 每日任务）。
+- **朋友圈联动**：新增点赞时调用 `SocialService.onMomentLiked()`；用户发动态后调用 `SocialService.onMomentsPosted(total:)`。
+- **亲密度里程碑**：亲密度达到 100 时调用 `SocialService.onIntimacyMaxed()`。
 
 ### 朋友圈开发要点
 

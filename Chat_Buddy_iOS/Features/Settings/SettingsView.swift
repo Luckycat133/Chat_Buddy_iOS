@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(SocialService.self) private var socialService
 
+    private var isZh: Bool { localization.uiLanguage.resolved == .zh }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -42,6 +44,26 @@ struct SettingsView: View {
                             iconColor: .yellow,
                             title: localization.t("achievements_title"),
                             subtitle: "\(socialService.points) \(localization.t("achievements_points"))"
+                        )
+                    }
+
+                    NavigationLink {
+                        FriendsView()
+                    } label: {
+                        SettingRow(
+                            icon: "person.2.fill",
+                            iconColor: .purple,
+                            title: localization.t("friends")
+                        )
+                    }
+
+                    NavigationLink {
+                        LeaderboardView()
+                    } label: {
+                        SettingRow(
+                            icon: "chart.bar.fill",
+                            iconColor: .pink,
+                            title: isZh ? "排行榜" : "Leaderboard"
                         )
                     }
                 }
@@ -142,6 +164,69 @@ struct SettingsView: View {
                             icon: "list.bullet.rectangle.fill",
                             iconColor: .mint,
                             title: localization.t("provider_profiles")
+                        )
+                    }
+                }
+
+                // MARK: - Advanced Tools
+                Section(isZh ? "高级工具" : "Advanced Tools") {
+                    NavigationLink {
+                        AgentsView()
+                    } label: {
+                        SettingRow(
+                            icon: "sparkles",
+                            iconColor: .indigo,
+                            title: localization.t("ai_agents")
+                        )
+                    }
+
+                    NavigationLink {
+                        GlobalMessageSearchView()
+                    } label: {
+                        SettingRow(
+                            icon: "magnifyingglass",
+                            iconColor: .brown,
+                            title: isZh ? "全局搜索" : "Global Search"
+                        )
+                    }
+
+                    NavigationLink {
+                        KnowledgeBaseView()
+                    } label: {
+                        SettingRow(
+                            icon: "books.vertical.fill",
+                            iconColor: .green,
+                            title: isZh ? "知识库" : "Knowledge Base"
+                        )
+                    }
+
+                    NavigationLink {
+                        ModelSwitcherView()
+                    } label: {
+                        SettingRow(
+                            icon: "cpu.fill",
+                            iconColor: .blue,
+                            title: isZh ? "模型切换" : "Model Switcher"
+                        )
+                    }
+
+                    NavigationLink {
+                        KnowledgeGraphView()
+                    } label: {
+                        SettingRow(
+                            icon: "point.3.connected.trianglepath.dotted",
+                            iconColor: .teal,
+                            title: isZh ? "知识图谱" : "Knowledge Graph"
+                        )
+                    }
+
+                    NavigationLink {
+                        LearningReportView()
+                    } label: {
+                        SettingRow(
+                            icon: "graduationcap.fill",
+                            iconColor: .orange,
+                            title: isZh ? "学习报告" : "Learning Report"
                         )
                     }
                 }

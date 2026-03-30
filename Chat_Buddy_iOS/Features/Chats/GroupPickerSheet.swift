@@ -45,14 +45,24 @@ struct GroupPickerSheet: View {
                 }
             }
             .navigationTitle(localization.t("chats_new_group"))
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
+                #if os(iOS)
                 ToolbarItem(placement: .topBarLeading) {
+                #else
+                ToolbarItem(placement: .automatic) {
+                #endif
                     Button { isPresented = false } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                     }
                 }
+                #if os(iOS)
                 ToolbarItem(placement: .topBarTrailing) {
+                #else
+                ToolbarItem(placement: .automatic) {
+                #endif
                     Button(localization.t("chats_create_group")) {
                         createGroup()
                     }

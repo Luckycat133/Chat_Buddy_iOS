@@ -5,6 +5,11 @@ import Foundation
 
     init() { load() }
 
+    /// Reload profile from persisted storage.
+    func reloadFromStorage() {
+        load()
+    }
+
     func update(nickName: String? = nil, avatarEmoji: String? = nil, signature: String? = nil) {
         if let n = nickName    { profile.nickName     = n }
         if let a = avatarEmoji { profile.avatarEmoji  = a }

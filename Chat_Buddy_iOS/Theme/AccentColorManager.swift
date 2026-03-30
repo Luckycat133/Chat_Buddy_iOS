@@ -45,9 +45,16 @@ final class AccentColorManager {
     }
 
     init() {
+        selectedPresetId = "default"
+        customColorHex = nil
+        reloadFromStorage()
+    }
+
+    /// Reload accent color state from persisted storage.
+    func reloadFromStorage() {
         let saved: AccentColorState? = StorageService.shared.get("accentColor")
-        self.selectedPresetId = saved?.presetId ?? "default"
-        self.customColorHex = saved?.customHex
+        selectedPresetId = saved?.presetId ?? "default"
+        customColorHex = saved?.customHex
     }
 
     func selectPreset(_ preset: AccentPreset) {

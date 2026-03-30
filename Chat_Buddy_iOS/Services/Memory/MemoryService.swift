@@ -28,6 +28,12 @@ import Foundation
         applyDecay()
     }
 
+    /// Reload memory records from persisted storage and re-apply decay.
+    func reloadFromStorage() {
+        load()
+        applyDecay()
+    }
+
     // MARK: - Public Read
 
     /// Active (non-forgotten) memories for a persona, newest-first.

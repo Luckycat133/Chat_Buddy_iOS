@@ -13,6 +13,12 @@ struct ChatSession: Identifiable, Codable {
     /// Optional display name for group chats; nil for 1v1 sessions.
     var groupName: String?
     var messages: [ChatMessage]
+    var polls: [ChatPoll]
+    var announcement: GroupAnnouncement?
+    var permissions: ChatPermissions
+    var isMuted: Bool
+    var adminOnly: Bool
+    var nicknames: [String: String]
     var createdAt: Date
     var updatedAt: Date
     var isPinned: Bool
@@ -32,12 +38,12 @@ struct ChatSession: Identifiable, Codable {
 
     /// Last non-system message, used for chat list preview.
     var lastMessage: ChatMessage? {
-        messages.last(where: { $0.role != .system })
+        messages.last(where: { $0.role != .system && $0.role != .tool })
     }
 
-    /// Messages to display in the UI (excludes system prompts).
+    /// Messages to display in the UI (excludes system and tool-only prompts).
     var displayMessages: [ChatMessage] {
-        messages.filter { $0.role != .system }
+        messages.filter { $0.role != .system && $0.role != .tool }
     }
 
     // MARK: - Initializers
@@ -48,6 +54,12 @@ struct ChatSession: Identifiable, Codable {
         self.personaIds = [personaId]
         self.groupName = nil
         self.messages = []
+        self.polls = []
+        self.announcement = nil
+        self.permissions = .default
+        self.isMuted = false
+        self.adminOnly = false
+        self.nicknames = [:]
         self.createdAt = Date()
         self.updatedAt = Date()
         self.isPinned = false
@@ -60,6 +72,12 @@ struct ChatSession: Identifiable, Codable {
         self.personaIds = personaIds
         self.groupName = groupName
         self.messages = []
+        self.polls = []
+        self.announcement = nil
+        self.permissions = .default
+        self.isMuted = false
+        self.adminOnly = false
+        self.nicknames = [:]
         self.createdAt = Date()
         self.updatedAt = Date()
         self.isPinned = false
@@ -68,13 +86,21 @@ struct ChatSession: Identifiable, Codable {
     // MARK: - Codable (forward & backward compatible)
 
     enum CodingKeys: String, CodingKey {
-        case id, personaIds, personaId, groupName, messages, createdAt, updatedAt, isPinned
+        case id, personaIds, personaId, groupName, messages, polls
+        case announcement, permissions, isMuted, adminOnly, nicknames
+        case createdAt, updatedAt, isPinned
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id        = try container.decode(String.self, forKey: .id)
         messages  = try container.decode([ChatMessage].self, forKey: .messages)
+        polls = (try? container.decode([ChatPoll].self, forKey: .polls)) ?? []
+        announcement = try? container.decode(GroupAnnouncement.self, forKey: .announcement)
+        permissions = (try? container.decode(ChatPermissions.self, forKey: .permissions)) ?? .default
+        isMuted = (try? container.decode(Bool.self, forKey: .isMuted)) ?? false
+        adminOnly = (try? container.decode(Bool.self, forKey: .adminOnly)) ?? false
+        nicknames = (try? container.decode([String: String].self, forKey: .nicknames)) ?? [:]
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         isPinned  = (try? container.decode(Bool.self, forKey: .isPinned)) ?? false
@@ -100,6 +126,12 @@ struct ChatSession: Identifiable, Codable {
         try container.encode(personaIds, forKey: .personaIds)    // always write new format
         try container.encodeIfPresent(groupName, forKey: .groupName)
         try container.encode(messages, forKey: .messages)
+        try container.encode(polls, forKey: .polls)
+        try container.encodeIfPresent(announcement, forKey: .announcement)
+        try container.encode(permissions, forKey: .permissions)
+        try container.encode(isMuted, forKey: .isMuted)
+        try container.encode(adminOnly, forKey: .adminOnly)
+        try container.encode(nicknames, forKey: .nicknames)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(isPinned, forKey: .isPinned)

@@ -56,7 +56,7 @@ enum MomentsOrchestrator {
                 let emoji = MomentsService.reactionEmojis.randomElement() ?? "👍"
                 await MainActor.run { store.addReaction(postId: postId, emoji: emoji, userId: persona.id) }
             } else {
-                await MainActor.run { store.toggleLike(postId: postId, userId: persona.id) }
+                await MainActor.run { _ = store.toggleLike(postId: postId, userId: persona.id) }
             }
             // Small stagger between each reactor
             try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 0.5...2.0) * 1_000_000_000))

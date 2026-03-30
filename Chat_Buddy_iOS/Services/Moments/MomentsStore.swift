@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// Observable store for the Moments social feed.
 /// Persists a single `MomentsData` blob at `chat-buddy:moments`.
@@ -16,6 +18,11 @@ import UIKit
     // MARK: - Init
 
     init() {
+        reloadFromStorage()
+    }
+
+    /// Reload all in-memory moments state from persisted storage.
+    func reloadFromStorage() {
         let data: MomentsData = StorageService.shared.get(Self.storageKey, default: .empty)
         posts = data.posts
         lastAIPostTime = data.lastAIPostTime
@@ -50,14 +57,19 @@ import UIKit
         }
     }
 
-    func toggleLike(postId: String, userId: String = "user-me") {
-        guard let idx = posts.firstIndex(where: { $0.id == postId }) else { return }
+    /// Toggles like state and returns whether the user is liked after the operation.
+    @discardableResult
+    func toggleLike(postId: String, userId: String = "user-me") -> Bool {
+        guard let idx = posts.firstIndex(where: { $0.id == postId }) else { return false }
         if let likeIdx = posts[idx].likes.firstIndex(of: userId) {
             posts[idx].likes.remove(at: likeIdx)
+            save()
+            return false
         } else {
             posts[idx].likes.append(userId)
+            save()
+            return true
         }
-        save()
     }
 
     func addReaction(postId: String, emoji: String, userId: String = "user-me") {
@@ -141,6 +153,7 @@ import UIKit
 
     /// Compresses `data` to max 600px JPEG and saves to disk. Returns the filename.
     static func saveImage(_ data: Data) -> String? {
+#if canImport(UIKit)
         guard let image = UIImage(data: data) else { return nil }
         let resized = resizeImage(image, maxDimension: 600)
         guard let jpeg = resized.jpegData(compressionQuality: 0.7) else { return nil }
@@ -153,6 +166,18 @@ import UIKit
             print("[MomentsStore] Failed to save image: \(error)")
             return nil
         }
+#else
+        // Fallback for environments where UIKit is unavailable.
+        let filename = "\(UUID().uuidString).img"
+        let url = momentsDirectory().appendingPathComponent(filename)
+        do {
+            try data.write(to: url)
+            return filename
+        } catch {
+            print("[MomentsStore] Failed to save image: \(error)")
+            return nil
+        }
+#endif
     }
 
     static func deleteImage(_ filename: String) {
@@ -175,6 +200,7 @@ import UIKit
 
     // MARK: - Private
 
+#if canImport(UIKit)
     private static func resizeImage(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
         let size = image.size
         let longest = max(size.width, size.height)
@@ -186,4 +212,5 @@ import UIKit
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
+#endif
 }

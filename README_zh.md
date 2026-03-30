@@ -4,7 +4,7 @@
 
 **Chat Buddy iOS** 是一款基于 SwiftUI 纯原生打造的高性能智能 AI 伴侣应用。该项目将广受欢迎的 Web 端“Chat Buddy”的核心功能深度迁移至 iOS 环境，提供了无缝衔接且纯粹的原生体验。
 
-![iOS 17+](https://img.shields.io/badge/iOS-17.0+-black?style=flat&logo=apple)
+![iOS 26+](https://img.shields.io/badge/iOS-26.0+-black?style=flat&logo=apple)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-100%25-blue?style=flat&logo=swift)
 ![License MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
@@ -19,17 +19,34 @@
 ## 🛠 技术栈
 
 - **界面框架**: SwiftUI
-- **核心引擎**: Swift 并发 (async/await)
-- **后台进程调度**: BackgroundTasks Server
+- **状态模型**: `@Observable` + Environment 注入
+- **核心引擎**: Swift 并发 (`actor`, `async/await`)
+- **后台进程调度**: iOS `BackgroundTasks` (`BGAppRefreshTask`, `BGProcessingTask`)
 - **视觉特效**: SwiftUI Canvas + SpriteKit
-- **数据持有**: 基于向后兼容映射的原生泛型 JSON 持久化
+- **数据持久化**: `StorageService` (`UserDefaults`) + JSON 备份导入/导出
 
 ## 📦 如何构建与运行
 
 1. 克隆本仓库到你的 Mac。
-2. 用 Xcode 打开 `Chat_Buddy_iOS.xcodeproj` (最低要求 Xcode 15+)。
+2. 用 Xcode 打开 `Chat_Buddy_iOS.xcodeproj` (最低要求 Xcode 26.2+)。
 3. 本项目完全使用标准的 iOS 原生框架，不需要繁杂的第三方依赖 (No CocoaPods / No SPM)。
 4. 选择 iOS 模拟器或真实设备，按下 `Cmd + R` 即可直接编译运行！
+
+### 终端构建与测试
+
+```bash
+# 构建
+xcodebuild -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  build
+
+# 测试
+xcodebuild -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  test
+```
 
 ## 📄 许可协议
 

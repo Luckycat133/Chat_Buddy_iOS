@@ -34,7 +34,9 @@ struct RepostSheet: View {
                 }
             }
             .navigationTitle(localization.t("moments_share_to_chat"))
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(localization.t("cancel")) { isPresented = false }
@@ -46,8 +48,8 @@ struct RepostSheet: View {
     // MARK: - Session Row
 
     private func sessionRow(_ session: ChatSession) -> some View {
-        let persona = PersonaStore.persona(byId: session.personaId)
-        let name = persona?.name ?? session.personaId
+        let persona = PersonaStore.persona(byId: session.primaryPersonaId)
+        let name = persona?.name ?? session.primaryPersonaId
         let color = persona?.accentColor ?? .blue
         let didShare = successSessionId == session.id
 

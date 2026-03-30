@@ -2,6 +2,8 @@ import SwiftUI
 
 /// Static persona data, ported from web's personas.js + taskAgents.js
 enum PersonaStore {
+        private static let customPersonasKey = "personas.custom"
+
     // MARK: - Social Companions (13)
 
     static let socialCompanions: [Persona] = [
@@ -127,11 +129,47 @@ enum PersonaStore {
 
     // MARK: - Combined
 
-    static let allPersonas: [Persona] = socialCompanions + taskAgents
+        static var customPersonas: [Persona] {
+                StorageService.shared.get(customPersonasKey, default: [])
+        }
+
+        static var customSocialCompanions: [Persona] {
+                customPersonas.filter { $0.agentType == .socialCompanion }
+        }
+
+        static var customTaskAgents: [Persona] {
+                customPersonas.filter { $0.agentType == .taskSpecialist }
+        }
+
+        static var allPersonas: [Persona] {
+                socialCompanions + taskAgents + customPersonas
+        }
 
     static func persona(byId id: String) -> Persona? {
         allPersonas.first { $0.id == id }
     }
+
+        static func addCustomPersona(_ persona: Persona) {
+                var all = customPersonas
+                all.append(persona)
+                StorageService.shared.set(customPersonasKey, value: all)
+        }
+
+        static func upsertCustomPersona(_ persona: Persona) {
+                var all = customPersonas
+                if let index = all.firstIndex(where: { $0.id == persona.id }) {
+                        all[index] = persona
+                } else {
+                        all.append(persona)
+                }
+                StorageService.shared.set(customPersonasKey, value: all)
+        }
+
+        static func deleteCustomPersona(id: String) {
+                var all = customPersonas
+                all.removeAll { $0.id == id }
+                StorageService.shared.set(customPersonasKey, value: all)
+        }
 
     // MARK: - Color Map
 

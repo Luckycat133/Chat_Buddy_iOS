@@ -2,9 +2,21 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ExportImportView: View {
+    @Environment(AppState.self) private var appState
     @Environment(LocalizationManager.self) private var localization
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(AccentColorManager.self) private var accentColorManager
     @Environment(APIConfigStore.self) private var configStore
+    @Environment(ChatStore.self) private var chatStore
+    @Environment(AffinityService.self) private var affinityService
+    @Environment(BookmarkService.self) private var bookmarkService
+    @Environment(DraftService.self) private var draftService
+    @Environment(MomentsStore.self) private var momentsStore
+    @Environment(BackgroundStore.self) private var backgroundStore
+    @Environment(UserProfileStore.self) private var userProfileStore
+    @Environment(SocialService.self) private var socialService
+    @Environment(FriendService.self) private var friendService
+    @Environment(MemoryService.self) private var memoryService
 
     @State private var showExporter = false
     @State private var showImporter = false
@@ -70,7 +82,7 @@ struct ExportImportView: View {
             handleImport(result)
         }
         .alert(localization.t("success"), isPresented: $showAlert) {
-            Button("OK") {}
+            Button(localization.t("done")) {}
         } message: {
             if let msg = alertMessage {
                 Text(msg)
@@ -107,7 +119,19 @@ struct ExportImportView: View {
                     from: data,
                     configStore: configStore,
                     localization: localization,
-                    themeManager: themeManager
+                    themeManager: themeManager,
+                    accentColorManager: accentColorManager,
+                    appState: appState,
+                    chatStore: chatStore,
+                    affinityService: affinityService,
+                    bookmarkService: bookmarkService,
+                    draftService: draftService,
+                    momentsStore: momentsStore,
+                    backgroundStore: backgroundStore,
+                    userProfileStore: userProfileStore,
+                    socialService: socialService,
+                    friendService: friendService,
+                    memoryService: memoryService
                 )
                 alertMessage = localization.t("import_success", params: ["count": "\(count)"])
                 showAlert = true

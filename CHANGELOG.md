@@ -7,6 +7,100 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.0] — 2026-03-30
+
+### Added — T12–T16 Web↔iOS Feature Parity
+
+Complete implementation of all remaining web app features that were missing from the iOS version.
+
+#### T12 — Chat Advanced Interactions
+- **ForwardMessageSheet** — Forward messages to other chat sessions with preview.
+- **RedPacketSheet** — Send virtual red packets with custom amount and blessing text.
+- **TriviaQuizView** — In-chat trivia quiz mini-game with score tracking.
+- **IdiomChainView** — Chinese idiom chain (成语接龙) word game.
+- **PollComposerView** + **ChatPoll model** — Create and vote on polls in group chats.
+- **GroupDetailsView** — Group chat management (announcements, permissions, members, polls).
+- **MessageBubble** now renders `[FORWARDED:]`, `[RED_PACKET:]`, `[GAME:]`, `[POLL:]` special message types.
+
+#### T13 — Settings Advanced Panels
+- **GlobalMessageSearchView** — Full-text search across all chat sessions.
+- **KnowledgeBaseView** — Document import, management, and toggle for knowledge base.
+- **ModelSwitcherView** — Quick switch between AI model configurations with token estimation.
+- **KnowledgeGraphView** — Knowledge graph node management and visualization.
+- **LearningReportView** — Usage analytics summary with export capability.
+
+#### T14 — Social Pages
+- **FriendsView** — Friend list with search, starring, group filtering, custom friend CRUD.
+- **FriendGroupsView** — Create and manage friend groups with color coding.
+- **FriendService** — Persistence layer for friend groups and metadata.
+- **LeaderboardView** — Multi-tab ranking (points, intimacy, check-in, achievements).
+- **AgentsView** — Agent list with search and custom agent management.
+- **AgentWorkspaceView** — Multi-topic workspace for task-oriented agent conversations.
+
+#### T15 — Custom Persona/Agent CRUD
+- **CustomPersonaEditorSheet** — Shared editor for creating and editing custom AI friends and agents.
+- **PersonaStore** — Added `upsertCustomPersona()` for unified create/edit with persistence.
+- FriendsView and AgentsView now support full context-menu create/edit/delete for custom personas.
+
+#### T16 — Data Import/Export Extended Validation
+- **StorageService** — Added `allowedImportKeys` whitelist covering all new storage keys.
+- **DataImporter** — Per-key type validation, size limits, and `reloadAllStores` refresh chain.
+- Import whitelist now covers: `friends.groups`, `friends.meta`, `knowledgeBase`, `knowledgeGraph.custom`, `personas.custom`.
+
+### Changed
+- **ChatStore** — Added group chat management (`createGroupSession`, `updateGroupName`, `updateAnnouncement`, `updatePermissions`, `addMembers`), poll lifecycle (`createPoll`, `votePoll`), message forwarding (`forwardMessage`), topic sessions (`createTopicSession`), and global search (`searchMessages`).
+- **ChatSession model** — Extended with `announcement`, `permissions`, `polls`, `parentSessionId`, `topicTitle` fields.
+- **DashboardView** — QuickActions widget now includes Friends navigation entry.
+- **SettingsView** — Added NavigationLinks to all 5 Advanced panels.
+- **Chat_Buddy_iOSApp** — Injected `FriendService` as environment object.
+- **AGENTS.md / CLAUDE.md** — Updated directory structure, data storage keys, and development status.
+
+### Documentation
+- Created `docs/WebToiOSMigration/PARITY_REPORT_2026-03-30.md` — Formal Web↔iOS parity status report.
+
+## [0.9.1] — 2026-03-21
+
+### Added
+
+- **Project test targets and shared scheme**
+  - Added `Chat_Buddy_iOSTests` and `Chat_Buddy_iOSUITests`.
+  - Added shared scheme at `Chat_Buddy_iOS.xcodeproj/xcshareddata/xcschemes/Chat_Buddy_iOS.xcscheme`.
+- **Background animation selection in settings**
+  - `BackgroundPickerView` now supports choosing animated effects (`AnimatedBackground`) in both global mode and per-chat mode.
+
+### Changed
+
+- **Backup/restore now covers full app storage**
+  - `DataExporter` now includes raw `storageData` from `StorageService.exportAll()`.
+  - `DataImporter` restores `storageData` first, then refreshes in-memory API settings via `APIConfigStore.reloadFromStorage()`.
+  - Backup settings now include `hasCompletedOnboarding`.
+- **Chat tool execution flow**
+  - `AIPipeline.Result` now returns `toolOutputs`.
+  - `ChatViewModel` appends `.tool` messages before assistant replies so users can see tool results in chat.
+  - Group chat path now passes `toolExecutor` into `AIPipeline.run(...)` consistently.
+- **Dashboard interaction wiring**
+  - Quick actions now route users directly to target tabs (new chat/friends).
+  - Today's Pick card can navigate to chats.
+
+### Fixed
+
+- **Animation intensity now affects real-time UI behavior**
+  - Chat background animation is disabled when `AnimationIntensity == .none`.
+  - Typing indicator animation speed/enable state now follows `ThemeManager.animationIntensity`.
+- **Moments/Social integration gaps**
+  - Moment likes now trigger social progress (`onMomentLiked`) on new likes.
+  - User posting now updates social task progress (`onMomentsPosted`).
+  - Intimacy reaching 100 now triggers social hook (`onIntimacyMaxed`).
+- **Localization cleanup**
+  - Replaced remaining hardcoded strings in Moments/Settings with `localization.t(...)`.
+  - Added corresponding `Localizable.xcstrings` keys for background animation labels and settings copy.
+- **Background task registration timing**
+  - `MomentsBackgroundScheduler.register()` moved to app init and made idempotent.
+  - Background task handlers now instantiate store dependencies within task execution.
+- **Code cleanup**
+  - Removed deprecated `personaId` usage in affected call sites.
+  - Deleted obsolete `Features/Moments/MomentsPlaceholderView.swift`.
+
 ## [0.9.0] — 2026-02-28
 
 ### Added — T11 Character Memory System

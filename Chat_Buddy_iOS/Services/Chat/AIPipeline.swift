@@ -24,6 +24,8 @@ enum AIPipeline {
         let wasSilent: Bool
         /// Memory facts extracted from `[MEMORY_SAVE:]` tags in the response.
         let newMemories: [ExtractedMemory]
+        /// Tool outputs produced during this turn (if any).
+        let toolOutputs: [String]
     }
 
     // MARK: - Constants
@@ -75,7 +77,7 @@ enum AIPipeline {
 
         guard let rawContent = response.choices.first?.message.content,
               !rawContent.isEmpty else {
-            return Result(messages: [], wasSilent: true, newMemories: [])
+            return Result(messages: [], wasSilent: true, newMemories: [], toolOutputs: [])
         }
 
         // 3. Enforce minimum persona response delay
@@ -87,11 +89,13 @@ enum AIPipeline {
 
         // 4. ReAct tool loop — Task Agents only
         var finalContent = rawContent
+        var toolOutputs: [String] = []
         if let executor = toolExecutor,
            ToolExecutorService.shouldUseTool(for: persona),
            rawContent.contains("[TOOL:") {
             let (cleaned, executions) = await executor.processResponse(rawContent)
             if !executions.isEmpty {
+                toolOutputs = executions.map(\.result)
                 // Build a follow-up request with tool results injected
                 var followUp = apiMessages
                 followUp.append(ChatMessage(role: .assistant, content: cleaned))
@@ -111,17 +115,18 @@ enum AIPipeline {
         }
 
         // 5. Parse markers and return
-        return parseResponse(finalContent, isZh: isZh)
+        return parseResponse(finalContent, isZh: isZh, toolOutputs: toolOutputs)
     }
 
     // MARK: - Context Management
 
     private static func buildContext(from messages: [ChatMessage]) -> [ChatMessage] {
-        if messages.count > compressionThreshold {
+        let visibleMessages = messages.filter { $0.role != .tool }
+        if visibleMessages.count > compressionThreshold {
             // Drop older messages to stay within a manageable context window
-            return Array(messages.suffix(compressedKeepCount))
+            return Array(visibleMessages.suffix(compressedKeepCount))
         }
-        return Array(messages.suffix(maxContextMessages))
+        return Array(visibleMessages.suffix(maxContextMessages))
     }
 
     // MARK: - System Prompt
@@ -203,14 +208,14 @@ enum AIPipeline {
 
     // MARK: - Response Parsing
 
-    private static func parseResponse(_ raw: String, isZh: Bool = false) -> Result {
+    private static func parseResponse(_ raw: String, isZh: Bool = false, toolOutputs: [String] = []) -> Result {
         // 1. Extract and strip all [MEMORY_SAVE:…] blocks first
         let (cleaned, newMemories) = extractMemories(from: raw)
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // 2. [SILENCE] — AI chose not to respond
         if trimmed == "[SILENCE]" || trimmed.hasPrefix("[SILENCE]") {
-            return Result(messages: [], wasSilent: true, newMemories: newMemories)
+            return Result(messages: [], wasSilent: true, newMemories: newMemories, toolOutputs: toolOutputs)
         }
 
         // 3. [MULTI:msg1|msg2|msg3] — Multiple consecutive messages
@@ -220,12 +225,12 @@ enum AIPipeline {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             if !parts.isEmpty {
-                return Result(messages: parts, wasSilent: false, newMemories: newMemories)
+                return Result(messages: parts, wasSilent: false, newMemories: newMemories, toolOutputs: toolOutputs)
             }
         }
 
         let finalMessage = trimmed.isEmpty ? [] : [trimmed]
-        return Result(messages: finalMessage, wasSilent: finalMessage.isEmpty, newMemories: newMemories)
+        return Result(messages: finalMessage, wasSilent: finalMessage.isEmpty, newMemories: newMemories, toolOutputs: toolOutputs)
     }
 
     /// Extracts the content between `[MULTI:` and the first `]`.

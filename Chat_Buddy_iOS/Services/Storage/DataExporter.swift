@@ -6,7 +6,14 @@ import SwiftUI
 struct AppBackup: Codable {
     let version: String
     let exportDate: Date
+    /// Raw blobs for all `StorageService`-persisted keys.
+    /// Includes chats, moments, social, memories, bookmarks, drafts, backgrounds, etc.
+    let storageData: [String: Data]?
+    /// Files in Documents/moments keyed by filename.
+    let momentsImages: [String: Data]?
+    /// API config is exported WITHOUT the apiKey — key lives only in the Keychain.
     let apiConfig: APIConfig?
+    /// Profiles are exported WITHOUT per-profile apiKeys for the same reason.
     let apiProfiles: [APIProfile]?
     let settings: [String: String]?
 }
@@ -17,6 +24,8 @@ struct DataExporter {
         AppBackup(
             version: AppConstants.appVersion,
             exportDate: Date(),
+            storageData: StorageService.shared.exportAll(),
+            momentsImages: exportMomentsImages(),
             apiConfig: configStore.activeConfig,
             apiProfiles: configStore.profiles,
             settings: exportSettings()
@@ -47,7 +56,27 @@ struct DataExporter {
         if let anim = defaults.string(forKey: UserDefaults.Keys.animationIntensity) {
             settings["animationIntensity"] = anim
         }
+        settings["hasCompletedOnboarding"] = defaults.bool(forKey: UserDefaults.Keys.hasCompletedOnboarding) ? "true" : "false"
         return settings
+    }
+
+    private static func exportMomentsImages() -> [String: Data]? {
+        let directory = MomentsStore.momentsDirectory()
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        var result: [String: Data] = [:]
+        for url in urls where !url.hasDirectoryPath {
+            if let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
+                result[url.lastPathComponent] = data
+            }
+        }
+        return result.isEmpty ? nil : result
     }
 }
 

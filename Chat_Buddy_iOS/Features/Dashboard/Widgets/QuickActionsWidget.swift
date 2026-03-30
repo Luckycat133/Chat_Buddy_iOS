@@ -5,6 +5,8 @@ struct QuickActionsWidget: View {
 
     /// Called when the user taps "New Chat". Typically switches the root tab to Chats.
     var onNewChat: () -> Void = {}
+    /// Called when the user taps "Friends". Typically switches to Moments/Social.
+    var onFriends: () -> Void = {}
 
     var body: some View {
         BentoCardView(
@@ -18,9 +20,10 @@ struct QuickActionsWidget: View {
                 }
                 .buttonStyle(.plain)
 
-                // Friends — placeholder until Moments/T08 lands
-                actionRow(icon: "person.2.fill", label: localization.t("friends"))
-                    .foregroundStyle(.secondary)
+                Button(action: onFriends) {
+                    actionRow(icon: "person.2.fill", label: localization.t("friends"))
+                }
+                .buttonStyle(.plain)
             }
         }
     }

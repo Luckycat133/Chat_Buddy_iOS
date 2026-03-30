@@ -10,6 +10,11 @@ import Foundation
 
     init() { load() }
 
+    /// Reload all social state from persisted storage.
+    func reloadFromStorage() {
+        load()
+    }
+
     // MARK: - Points
 
     func addPoints(_ n: Int) {

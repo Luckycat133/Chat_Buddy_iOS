@@ -7,6 +7,7 @@ struct DashboardView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.colorScheme) private var colorScheme
     @State private var viewModel = DashboardViewModel()
+    @State private var showFriends = false
 
     private var isEffectivelyDark: Bool {
         themeManager.mode == .dark || (themeManager.mode == .system && colorScheme == .dark)
@@ -26,12 +27,18 @@ struct DashboardView: View {
                     LazyVGrid(columns: columns, spacing: DSSpacing.sm) {
                         RecentChatsWidget()
                         StatsWidget()
-                        QuickActionsWidget(onNewChat: { appState.selectedTab = .chats })
+                        QuickActionsWidget(
+                            onNewChat: { appState.selectedTab = .chats },
+                            onFriends: { showFriends = true }
+                        )
                         FriendsWidget()
                     }
                     .padding(.horizontal, DSSpacing.sm)
 
-                    TodaysPickWidget(persona: viewModel.todaysPick)
+                    TodaysPickWidget(
+                        persona: viewModel.todaysPick,
+                        onTap: { appState.selectedTab = .chats }
+                    )
                         .padding(.horizontal, DSSpacing.sm)
 
                     SocialWidget()
@@ -41,6 +48,9 @@ struct DashboardView: View {
                 .padding(.bottom, DSSpacing.huge)
             }
             .navigationTitle(localization.t("nav_dashboard"))
+            .sheet(isPresented: $showFriends) {
+                NavigationStack { FriendsView() }
+            }
             .background {
                 if themeManager.oledEnabled && isEffectivelyDark {
                     Color.black.ignoresSafeArea()

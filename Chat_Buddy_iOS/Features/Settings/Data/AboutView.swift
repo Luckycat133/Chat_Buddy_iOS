@@ -29,7 +29,7 @@ struct AboutView: View {
             }
 
             Section(localization.t("about")) {
-                Text("Chat Buddy is a feature-rich AI chat companion with multiple personalities, bilingual support, and social features.")
+                Text(localization.t("about_description"))
                     .font(DSTypography.footnote)
                     .foregroundStyle(.secondary)
             }

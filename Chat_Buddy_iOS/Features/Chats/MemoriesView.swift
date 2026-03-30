@@ -28,15 +28,25 @@ struct MemoriesView: View {
                 }
             }
             .navigationTitle(localization.t("memories_title"))
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
+                #if os(iOS)
                 ToolbarItem(placement: .topBarLeading) {
+                #else
+                ToolbarItem(placement: .automatic) {
+                #endif
                     Button(localization.t("memories_add")) {
                         withAnimation { showAddForm.toggle() }
                     }
                 }
                 if !memories.isEmpty {
+                    #if os(iOS)
                     ToolbarItem(placement: .topBarTrailing) {
+                    #else
+                    ToolbarItem(placement: .automatic) {
+                    #endif
                         Button(role: .destructive) {
                             showClearAlert = true
                         } label: {
@@ -97,7 +107,9 @@ struct MemoriesView: View {
                     }
             }
         }
+        #if os(iOS)
         .listStyle(.insetGrouped)
+        #endif
         .animation(.default, value: memories.count)
     }
 

@@ -31,8 +31,8 @@ struct RecentChatsWidget: View {
 
     @ViewBuilder
     private func recentRow(for session: ChatSession) -> some View {
-        let persona = PersonaStore.allPersonas.first { $0.id == session.personaId }
-        let name    = persona?.localizedName(language: localization.uiLanguage) ?? session.personaId
+        let persona = PersonaStore.allPersonas.first { $0.id == session.primaryPersonaId }
+        let name    = persona?.localizedName(language: localization.uiLanguage) ?? session.primaryPersonaId
         let color   = persona?.accentColor ?? Color.accentColor
         let preview = session.lastMessage?.content ?? ""
 

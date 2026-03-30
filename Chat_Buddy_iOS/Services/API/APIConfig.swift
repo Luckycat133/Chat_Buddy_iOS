@@ -3,11 +3,19 @@ import Foundation
 /// Configuration for the API client, matching web's apiConfig system
 struct APIConfig: Codable, Equatable {
     var baseURL: String
-    var apiKey: String
+    /// API key is stored in the Keychain and is never serialised to disk.
+    /// `APIConfigStore` is responsible for populating this field at runtime.
+    var apiKey: String = ""
     var model: String
     var temperature: Double
     var timeout: TimeInterval
     var maxRetries: Int
+
+    /// Coding keys intentionally omit `apiKey` so it is never written to
+    /// UserDefaults or exported backup files.
+    enum CodingKeys: String, CodingKey {
+        case baseURL, model, temperature, timeout, maxRetries
+    }
 
     static let `default` = APIConfig(
         baseURL: "https://api.deepseek.com/v1",

@@ -7,6 +7,100 @@
 
 ---
 
+## [0.10.0] — 2026-03-30
+
+### 新增 — T12–T16 Web↔iOS 功能对齐
+
+完整实现 Web 应用中所有缺失的 iOS 功能。
+
+#### T12 — 聊天高级交互
+- **ForwardMessageSheet** — 消息转发到其他会话，带消息预览。
+- **RedPacketSheet** — 发送虚拟红包，支持自定义金额和祝福语。
+- **TriviaQuizView** — 聊天内知识问答小游戏，带分数追踪。
+- **IdiomChainView** — 成语接龙文字游戏。
+- **PollComposerView** + **ChatPoll 模型** — 在群聊中创建和投票。
+- **GroupDetailsView** — 群聊管理（公告/权限/成员/投票）。
+- **MessageBubble** 新增 `[FORWARDED:]`、`[RED_PACKET:]`、`[GAME:]`、`[POLL:]` 特殊消息渲染。
+
+#### T13 — 设置高级面板
+- **GlobalMessageSearchView** — 跨会话全文消息搜索。
+- **KnowledgeBaseView** — 知识库文档导入、管理和开关。
+- **ModelSwitcherView** — AI 模型快速切换和 Token 估算。
+- **KnowledgeGraphView** — 知识图谱节点管理与可视化。
+- **LearningReportView** — 使用数据汇总分析与导出。
+
+#### T14 — 社交页面
+- **FriendsView** — 好友列表，支持搜索、星标、分组、自定义好友增删改。
+- **FriendGroupsView** — 好友分组创建与管理，支持颜色标记。
+- **FriendService** — 好友分组和元数据持久化服务。
+- **LeaderboardView** — 多维度排行榜（积分/亲密度/签到/成就）。
+- **AgentsView** — 智能体列表，支持搜索和自定义智能体管理。
+- **AgentWorkspaceView** — 任务智能体多话题工作区。
+
+#### T15 — 自定义角色/智能体管理
+- **CustomPersonaEditorSheet** — 创建和编辑自定义 AI 好友/智能体的共享编辑器。
+- **PersonaStore** — 新增 `upsertCustomPersona()` 统一新增/编辑和持久化。
+- FriendsView 和 AgentsView 支持完整的上下文菜单创建/编辑/删除自定义角色。
+
+#### T16 — 数据导入导出扩展验证
+- **StorageService** — 新增 `allowedImportKeys` 白名单覆盖所有新存储键。
+- **DataImporter** — 按键类型验证、大小限制和 `reloadAllStores` 刷新链路。
+- 导入白名单覆盖：`friends.groups`、`friends.meta`、`knowledgeBase`、`knowledgeGraph.custom`、`personas.custom`。
+
+### 变更
+- **ChatStore** — 新增群聊管理、投票生命周期、消息转发、话题会话和全局搜索方法。
+- **ChatSession 模型** — 扩展 `announcement`、`permissions`、`polls`、`parentSessionId`、`topicTitle` 字段。
+- **DashboardView** — 快捷操作新增好友导航入口。
+- **SettingsView** — 新增 5 个高级面板的 NavigationLink。
+- **Chat_Buddy_iOSApp** — 注入 `FriendService` 环境对象。
+- **AGENTS.md / CLAUDE.md** — 更新目录结构、存储键和开发状态。
+
+### 文档
+- 新建 `docs/WebToiOSMigration/PARITY_REPORT_2026-03-30.md` — Web↔iOS 功能对齐正式报告。
+
+## [0.9.1] — 2026-03-21
+
+### 新增
+
+- **测试目标与共享 Scheme**
+  - 新增 `Chat_Buddy_iOSTests` 与 `Chat_Buddy_iOSUITests`。
+  - 新增共享 Scheme：`Chat_Buddy_iOS.xcodeproj/xcshareddata/xcschemes/Chat_Buddy_iOS.xcscheme`。
+- **背景动画选择能力**
+  - `BackgroundPickerView` 现支持在全局和单聊天维度选择 `AnimatedBackground` 动画效果。
+
+### 变更
+
+- **备份/恢复覆盖范围升级为全量存储**
+  - `DataExporter` 新增 `StorageService.exportAll()` 的原始 `storageData` 导出。
+  - `DataImporter` 先恢复 `storageData`，再通过 `APIConfigStore.reloadFromStorage()` 同步内存态配置。
+  - 备份设置中新增 `hasCompletedOnboarding`。
+- **聊天工具执行链路增强**
+  - `AIPipeline.Result` 新增 `toolOutputs`。
+  - `ChatViewModel` 先追加 `.tool` 消息，再展示助手回复，工具结果可见。
+  - 群聊路径已统一把 `toolExecutor` 传入 `AIPipeline.run(...)`。
+- **仪表盘交互补齐**
+  - 快捷操作中的新建聊天/好友入口已接入实际 Tab 跳转。
+  - 今日推荐卡片支持进入聊天页。
+
+### 修复
+
+- **动画强度真正作用于界面**
+  - 当 `AnimationIntensity == .none` 时，聊天背景动画关闭。
+  - 正在输入指示器的开关与速度现在跟随 `ThemeManager.animationIntensity`。
+- **Moments 与社交系统联动缺口**
+  - 新点赞会触发 `onMomentLiked` 任务进度。
+  - 用户发动态会触发 `onMomentsPosted`。
+  - 亲密度达到 100 会触发 `onIntimacyMaxed`。
+- **本地化收尾**
+  - 替换 Moments/Settings 中剩余硬编码文案为 `localization.t(...)`。
+  - 补充背景动画与设置相关的 `Localizable.xcstrings` 词条。
+- **后台任务注册时机优化**
+  - `MomentsBackgroundScheduler.register()` 移至 `App.init()` 且改为幂等。
+  - 后台任务处理器内部初始化依赖 Store，避免状态引用问题。
+- **代码清理**
+  - 修复受影响位置的 `personaId` 废弃用法。
+  - 删除废弃文件 `Features/Moments/MomentsPlaceholderView.swift`。
+
 ## [0.9.0] — 2026-02-28
 
 ### 新增 — T11 角色记忆系统 (Character Memory System)
