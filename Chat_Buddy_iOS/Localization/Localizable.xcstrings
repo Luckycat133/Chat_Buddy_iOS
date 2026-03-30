@@ -3035,6 +3035,23 @@
         }
       }
     },
+    "upload_photo_avatar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload Photo Avatar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传照片头像"
+          }
+        }
+      }
+    },
     "profile_name": {
       "extractionState": "manual",
       "localizations": {

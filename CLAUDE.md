@@ -343,3 +343,4 @@ The iOS app is ported from the web app located at `Chat_Buddy_Web/src/`. Key ref
 | T14 — Social Pages (friends, friend groups, leaderboard, agents, agent workspace) | ✅ Done |
 | T15 — Custom Persona/Agent CRUD | ✅ Done |
 | T16 — Data Import/Export Extended Validation | ✅ Done |
+| T17 — Feature Parity (RAG, Stickers, Translation, Rich Messages, Presence, Notifications, Agent Skills) | ✅ Done |

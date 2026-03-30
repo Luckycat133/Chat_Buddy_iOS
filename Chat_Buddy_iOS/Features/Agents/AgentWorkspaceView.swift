@@ -18,6 +18,32 @@ struct AgentWorkspaceView: View {
 
     var body: some View {
         List {
+            // Agent skills
+            let skills = AgentSkillStore.getSkillsForAgent(agentId: agent.id)
+            if !skills.isEmpty {
+                Section(isZh ? "技能" : "Skills") {
+                    ForEach(skills, id: \.id) { skill in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(isZh ? skill.nameZh : skill.name)
+                                    .font(DSTypography.footnote.weight(.semibold))
+                                Text(skill.description)
+                                    .font(DSTypography.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                            Spacer()
+                            Text(AgentSkillStore.categoryLabel(skill.category, isZh: isZh))
+                                .font(.system(size: 9))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.12), in: Capsule())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
             Section(isZh ? "新话题" : "New Topic") {
                 TextField(isZh ? "输入话题名称" : "Topic name", text: $topicName)
                 Button(isZh ? "创建" : "Create") {

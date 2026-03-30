@@ -11,6 +11,7 @@ struct MessageBubble: View {
     let onDelete: (String) -> Void
     let onForward: (ChatMessage) -> Void
     let onVotePoll: (String, String) -> Void
+    var onTranslate: ((ChatMessage) -> Void)?
 
     @Environment(AccentColorManager.self) private var accentManager
     @Environment(BookmarkService.self) private var bookmarkService
@@ -123,6 +124,14 @@ struct MessageBubble: View {
                     onForward(message)
                 } label: {
                     Label(isZh ? "转发" : "Forward", systemImage: "arrowshape.turn.up.right")
+                }
+
+                if let onTranslate {
+                    Button {
+                        onTranslate(message)
+                    } label: {
+                        Label(isZh ? "翻译" : "Translate", systemImage: "character.book.closed")
+                    }
                 }
 
                 if isUser {
@@ -245,10 +254,22 @@ struct MessageBubble: View {
     private func messageContentView(isUserBubble: Bool) -> some View {
         switch parsedType {
         case .plain:
-            Text(message.content)
-                .font(DSTypography.body)
-                .foregroundStyle(isUserBubble ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-                .textSelection(.enabled)
+            VStack(alignment: isUserBubble ? .trailing : .leading, spacing: DSSpacing.xs) {
+                // Rich content: markdown + code blocks
+                if message.content.contains("```") || message.content.contains("**") || message.content.contains("`") {
+                    MarkdownContentView(text: message.content, isUser: isUserBubble)
+                } else {
+                    Text(message.content)
+                        .font(DSTypography.body)
+                        .foregroundStyle(isUserBubble ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                        .textSelection(.enabled)
+                }
+
+                // Link preview for URLs in message
+                if let url = LinkPreviewView.extractURL(from: message.content) {
+                    LinkPreviewView(url: url, isUser: isUserBubble)
+                }
+            }
 
         case .forwarded(let body):
             VStack(alignment: .leading, spacing: DSSpacing.xxs) {

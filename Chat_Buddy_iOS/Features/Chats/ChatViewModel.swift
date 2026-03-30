@@ -84,6 +84,11 @@ import SwiftUI
 
         let config = apiConfigStore.activeConfig
         do {
+            // Check if RAG is enabled in knowledge base settings
+            struct KBCheck: Codable { var ragEnabled: Bool }
+            let kbData: KBCheck = StorageService.shared.get("knowledgeBase", default: KBCheck(ragEnabled: false))
+            let ragEnabled = kbData.ragEnabled
+
             let result = try await AIPipeline.run(
                 session: currentSession,
                 persona: persona,
@@ -91,7 +96,8 @@ import SwiftUI
                 aiLanguageCode: aiLanguageCode,
                 intimacyLevel: intimacyLevel,
                 memoryService: memoryService,
-                toolExecutor: toolExecutor
+                toolExecutor: toolExecutor,
+                ragEnabled: ragEnabled
             )
 
             // Persist any new memories extracted from the response

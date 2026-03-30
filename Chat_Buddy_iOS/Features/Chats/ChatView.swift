@@ -32,6 +32,8 @@ struct ChatView: View {
     @State private var showMemories = false
     @State private var showGroupDetails = false
     @State private var forwardingMessage: ChatMessage? = nil
+    @State private var showStickers = false
+    @State private var translatingMessage: ChatMessage? = nil
 
     enum GameType { case rps, numberGuess, trivia, idiom }
 
@@ -115,7 +117,8 @@ struct ChatView: View {
                 quotedMessage: quotedMessage,
                 quotedSenderName: quotedSenderName,
                 quotedAccentColor: quotedAccentColor,
-                onClearQuote: { viewModel.quotedMessageId = nil }
+                onClearQuote: { viewModel.quotedMessageId = nil },
+                onStickerTap: { showStickers = true }
             )
             } // end inner VStack
         } // end ZStack
@@ -326,6 +329,22 @@ struct ChatView: View {
                 chatStore.forwardMessage(message, to: targetIds, sourceSessionId: sessionId)
             }
         }
+        .sheet(item: $translatingMessage) { message in
+            TranslationCompareView(sourceText: message.content) {
+                translatingMessage = nil
+            }
+        }
+        .sheet(isPresented: $showStickers) {
+            StickerPickerView(
+                personaId: persona.id,
+                onSelect: { sticker in
+                    viewModel.inputText += sticker
+                    showStickers = false
+                },
+                onDismiss: { showStickers = false }
+            )
+            .presentationDetents([.medium])
+        }
         .onAppear {
             if let draft = draftService.draft(for: sessionId) {
                 viewModel.inputText = draft.text
@@ -333,6 +352,17 @@ struct ChatView: View {
             }
             if let initialFocusMessageId {
                 scrollToMessageId = initialFocusMessageId
+            }
+            // Proactive greeting
+            let lastDate = viewModel.messages.last?.timestamp
+            let isZhUI = localization.uiLanguage.resolved == .zh
+            if let greeting = GreetingService.checkWindowOpenGreeting(
+                lastMessageDate: lastDate,
+                personaId: persona.id,
+                isZh: isZhUI
+            ) {
+                let greetMsg = ChatMessage(role: .assistant, content: greeting)
+                viewModel.messages.append(greetMsg)
             }
         }
         .task(id: viewModel.inputText) {
@@ -397,7 +427,8 @@ struct ChatView: View {
                             onForward: { msg in forwardingMessage = msg },
                             onVotePoll: { pollId, optionId in
                                 _ = chatStore.votePoll(in: sessionId, pollId: pollId, optionId: optionId)
-                            }
+                            },
+                            onTranslate: { msg in translatingMessage = msg }
                         )
                         .id(msg.id)
                     }

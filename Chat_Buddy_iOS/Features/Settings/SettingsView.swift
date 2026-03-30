@@ -257,6 +257,16 @@ struct SettingsView: View {
                         )
                     }
 
+                    NavigationLink {
+                        HelpView()
+                    } label: {
+                        SettingRow(
+                            icon: "questionmark.circle.fill",
+                            iconColor: .teal,
+                            title: isZh ? "帮助" : "Help"
+                        )
+                    }
+
                     Button {
                         appState.resetOnboarding()
                     } label: {

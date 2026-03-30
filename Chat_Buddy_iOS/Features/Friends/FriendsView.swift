@@ -86,6 +86,13 @@ struct FriendsView: View {
                                     .fill(persona.accentColor.opacity(0.18))
                                     .frame(width: 38, height: 38)
                                     .overlay(Text(String(persona.name.prefix(1))).font(.footnote).foregroundStyle(persona.accentColor))
+                                    .overlay(alignment: .bottomTrailing) {
+                                        let status = PresenceService.getStatus(for: persona.id)
+                                        Circle()
+                                            .fill(status.swiftUIColor)
+                                            .frame(width: 10, height: 10)
+                                            .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+                                    }
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {

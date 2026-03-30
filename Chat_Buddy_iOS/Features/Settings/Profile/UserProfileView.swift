@@ -8,6 +8,7 @@ struct UserProfileView: View {
     @State private var signature = ""
     @State private var selectedEmoji = "😊"
     @State private var saved = false
+    @State private var showAvatarUpload = false
 
     var body: some View {
         Form {
@@ -40,6 +41,12 @@ struct UserProfileView: View {
                         }
                     }
                     .padding(.vertical, DSSpacing.xs)
+                }
+
+                Button {
+                    showAvatarUpload = true
+                } label: {
+                    Label(localization.t("upload_photo_avatar"), systemImage: "photo.circle.fill")
                 }
             } header: {
                 Text(localization.t("profile_avatar"))
@@ -93,6 +100,16 @@ struct UserProfileView: View {
             nickName     = profileStore.profile.nickName
             signature    = profileStore.profile.signature
             selectedEmoji = profileStore.profile.avatarEmoji
+        }
+        .sheet(isPresented: $showAvatarUpload) {
+            AvatarUploadSheet(
+                currentAvatar: profileStore.profile.photoAvatarBase64,
+                onSave: { base64 in
+                    profileStore.updatePhotoAvatar(base64)
+                    showAvatarUpload = false
+                },
+                onDismiss: { showAvatarUpload = false }
+            )
         }
     }
 }

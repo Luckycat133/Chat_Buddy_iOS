@@ -17,6 +17,11 @@ import Foundation
         save()
     }
 
+    func updatePhotoAvatar(_ base64: String?) {
+        profile.photoAvatarBase64 = base64
+        save()
+    }
+
     private func save() {
         StorageService.shared.set("userProfile", value: profile)
     }

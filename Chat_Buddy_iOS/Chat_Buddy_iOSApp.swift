@@ -26,6 +26,7 @@ struct Chat_Buddy_iOSApp: App {
     @State private var friendService = FriendService()
     @State private var memoryService = MemoryService()
     @State private var toolExecutorService = ToolExecutorService()
+    @State private var notificationService = NotificationService()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -59,6 +60,7 @@ struct Chat_Buddy_iOSApp: App {
             .environment(friendService)
             .environment(memoryService)
             .environment(toolExecutorService)
+            .environment(notificationService)
             .tint(accentColorManager.currentColor)
             .preferredColorScheme(themeManager.resolvedColorScheme)
             .onAppear {

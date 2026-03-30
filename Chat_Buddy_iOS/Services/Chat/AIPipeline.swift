@@ -51,20 +51,33 @@ enum AIPipeline {
         aiLanguageCode: String,
         intimacyLevel: Int = 1,
         memoryService: MemoryService? = nil,
-        toolExecutor: ToolExecutorService? = nil
+        toolExecutor: ToolExecutorService? = nil,
+        ragEnabled: Bool = false,
+        userQuery: String? = nil
     ) async throws -> Result {
         let requestStart = Date()
         let isZh = aiLanguageCode.hasPrefix("zh")
 
         // 1. Build context
         let contextMessages = buildContext(from: session.displayMessages)
+
+        // RAG context injection
+        var ragBlock = ""
+        if ragEnabled, let query = userQuery ?? session.displayMessages.last(where: { $0.role == .user })?.content {
+            let ragResults = RAGService.searchDocuments(query: query, topK: 3)
+            if !ragResults.isEmpty {
+                ragBlock = RAGService.buildRAGContext(ragResults)
+            }
+        }
+
         let systemMsg = ChatMessage(
             role: .system,
             content: buildSystemPrompt(
                 for: persona,
                 aiLanguageCode: aiLanguageCode,
                 intimacyLevel: intimacyLevel,
-                memoryService: memoryService
+                memoryService: memoryService,
+                ragContext: ragBlock
             )
         )
         let apiMessages = [systemMsg] + contextMessages
@@ -135,7 +148,8 @@ enum AIPipeline {
         for persona: Persona,
         aiLanguageCode: String,
         intimacyLevel: Int = 1,
-        memoryService: MemoryService? = nil
+        memoryService: MemoryService? = nil,
+        ragContext: String = ""
     ) -> String {
         let isZh = aiLanguageCode.hasPrefix("zh")
         let mood  = MoodService.currentMood(for: persona)
@@ -181,6 +195,7 @@ enum AIPipeline {
             当前心情：\(moodHint)
             \(affinityHint)
             \(memoryBlock)
+            \(ragContext)
             \(toolHint)
             \(multiHint)
             \(saveHint)
@@ -197,6 +212,7 @@ enum AIPipeline {
             Current mood: \(moodHint)
             \(affinityHint)
             \(memoryBlock)
+            \(ragContext)
             \(toolHint)
             \(multiHint)
             \(saveHint)

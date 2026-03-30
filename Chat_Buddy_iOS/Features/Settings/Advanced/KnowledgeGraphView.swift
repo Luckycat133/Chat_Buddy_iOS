@@ -31,17 +31,40 @@ private struct KnowledgeNode: Identifiable, Codable {
     }
 }
 
+/// A directed edge between two knowledge nodes.
+private struct KnowledgeEdge: Identifiable, Codable {
+    var id: String
+    var sourceId: String
+    var targetId: String
+    var label: String
+    var labelZh: String
+
+    init(id: String = UUID().uuidString, sourceId: String, targetId: String, label: String, labelZh: String = "") {
+        self.id = id
+        self.sourceId = sourceId
+        self.targetId = targetId
+        self.label = label
+        self.labelZh = labelZh
+    }
+}
+
 struct KnowledgeGraphView: View {
     @Environment(LocalizationManager.self) private var localization
 
     @State private var customNodes: [KnowledgeNode] = StorageService.shared.get("knowledgeGraph.custom", default: [])
+    @State private var edges: [KnowledgeEdge] = StorageService.shared.get("knowledgeGraph.edges", default: [])
     @State private var search = ""
     @State private var showAdd = false
+    @State private var showAddEdge = false
     @State private var draftNameEn = ""
     @State private var draftNameZh = ""
     @State private var draftCategory = "custom"
     @State private var draftDescEn = ""
     @State private var draftDescZh = ""
+    @State private var edgeSourceId = ""
+    @State private var edgeTargetId = ""
+    @State private var edgeLabelEn = ""
+    @State private var edgeLabelZh = ""
 
     private var isZh: Bool { localization.uiLanguage.resolved == .zh }
 
@@ -64,6 +87,16 @@ struct KnowledgeGraphView: View {
         }
     }
 
+    private var builtinEdges: [KnowledgeEdge] {
+        [
+            KnowledgeEdge(id: "edge-swift-swiftui", sourceId: "kg-swift", targetId: "kg-swiftui", label: "enables", labelZh: "是基础"),
+            KnowledgeEdge(id: "edge-swiftui-testing", sourceId: "kg-swiftui", targetId: "kg-testing", label: "tested by", labelZh: "可测试"),
+            KnowledgeEdge(id: "edge-network-swift", sourceId: "kg-network", targetId: "kg-swift", label: "uses", labelZh: "使用"),
+        ]
+    }
+
+    private var allEdges: [KnowledgeEdge] { builtinEdges + edges }
+
     var body: some View {
         List {
             Section {
@@ -75,6 +108,44 @@ struct KnowledgeGraphView: View {
                     showAdd = true
                 } label: {
                     Label(isZh ? "新增知识点" : "Add Concept", systemImage: "plus.circle")
+                }
+                Button {
+                    showAddEdge = true
+                } label: {
+                    Label(isZh ? "新增关系" : "Add Relationship", systemImage: "arrow.triangle.branch")
+                }
+            }
+
+            // Edges section
+            if !allEdges.isEmpty {
+                Section(isZh ? "关系" : "Relationships") {
+                    ForEach(allEdges) { edge in
+                        HStack(spacing: DSSpacing.xs) {
+                            let sourceName = nodes.first { $0.id == edge.sourceId }.map { isZh ? $0.nameZh : $0.name } ?? edge.sourceId
+                            let targetName = nodes.first { $0.id == edge.targetId }.map { isZh ? $0.nameZh : $0.name } ?? edge.targetId
+                            Text(sourceName)
+                                .font(DSTypography.caption1.weight(.semibold))
+                            Image(systemName: "arrow.right")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(targetName)
+                                .font(DSTypography.caption1.weight(.semibold))
+                            Spacer()
+                            Text(isZh ? edge.labelZh : edge.label)
+                                .font(DSTypography.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .swipeActions {
+                            if !builtinEdges.contains(where: { $0.id == edge.id }) {
+                                Button(role: .destructive) {
+                                    edges.removeAll { $0.id == edge.id }
+                                    saveEdges()
+                                } label: {
+                                    Label(isZh ? "删除" : "Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -168,9 +239,92 @@ struct KnowledgeGraphView: View {
                 }
             }
         }
+        .sheet(isPresented: $showAddEdge) {
+            AddEdgeSheet(
+                nodes: nodes,
+                isZh: isZh,
+                sourceId: $edgeSourceId,
+                targetId: $edgeTargetId,
+                labelEn: $edgeLabelEn,
+                labelZh: $edgeLabelZh,
+                isPresented: $showAddEdge
+            ) {
+                let en = edgeLabelEn.trimmingCharacters(in: .whitespacesAndNewlines)
+                let zh = edgeLabelZh.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !edgeSourceId.isEmpty, !edgeTargetId.isEmpty else { return }
+                let edge = KnowledgeEdge(
+                    sourceId: edgeSourceId,
+                    targetId: edgeTargetId,
+                    label: en.isEmpty ? zh : en,
+                    labelZh: zh.isEmpty ? en : zh
+                )
+                edges.insert(edge, at: 0)
+                saveEdges()
+                edgeSourceId = ""
+                edgeTargetId = ""
+                edgeLabelEn = ""
+                edgeLabelZh = ""
+            }
+        }
     }
 
     private func save() {
         StorageService.shared.set("knowledgeGraph.custom", value: customNodes)
+    }
+
+    private func saveEdges() {
+        StorageService.shared.set("knowledgeGraph.edges", value: edges)
+    }
+}
+
+// MARK: - Add Edge Sheet
+
+private struct AddEdgeSheet: View {
+    let nodes: [KnowledgeNode]
+    let isZh: Bool
+    @Binding var sourceId: String
+    @Binding var targetId: String
+    @Binding var labelEn: String
+    @Binding var labelZh: String
+    @Binding var isPresented: Bool
+    let onSave: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker(isZh ? "起点" : "Source", selection: $sourceId) {
+                        Text(isZh ? "选择" : "Select").tag("")
+                        ForEach(nodes) { node in
+                            Text(isZh ? node.nameZh : node.name).tag(node.id)
+                        }
+                    }
+                    Picker(isZh ? "终点" : "Target", selection: $targetId) {
+                        Text(isZh ? "选择" : "Select").tag("")
+                        ForEach(nodes) { node in
+                            Text(isZh ? node.nameZh : node.name).tag(node.id)
+                        }
+                    }
+                }
+                Section {
+                    TextField(isZh ? "关系描述 (英文)" : "Relationship (English)", text: $labelEn)
+                    TextField(isZh ? "关系描述 (中文)" : "Relationship (Chinese)", text: $labelZh)
+                }
+            }
+            .navigationTitle(isZh ? "新增关系" : "Add Relationship")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(isZh ? "取消" : "Cancel") { isPresented = false }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(isZh ? "保存" : "Save") {
+                        onSave()
+                        isPresented = false
+                    }
+                    .disabled(sourceId.isEmpty || targetId.isEmpty || (labelEn.isEmpty && labelZh.isEmpty))
+                }
+            }
+        }
     }
 }

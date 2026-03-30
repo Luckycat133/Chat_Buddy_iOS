@@ -4,6 +4,7 @@ struct UserProfile: Codable, Equatable {
     var nickName: String
     var avatarEmoji: String
     var signature: String
+    var photoAvatarBase64: String?
 
     static let defaultAvatars: [String] = [
         "😊", "🌟", "🎮", "🎨", "🌙", "🔥", "🎵", "🌸", "💪", "🦋", "🎯", "🦊",

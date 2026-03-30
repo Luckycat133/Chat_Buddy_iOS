@@ -10,6 +10,7 @@ struct MessageInputView: View {
     var quotedSenderName: String = ""
     var quotedAccentColor: Color = .accentColor
     var onClearQuote: (() -> Void)? = nil
+    var onStickerTap: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +34,14 @@ struct MessageInputView: View {
                     .padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DSRadius.lg))
                     .disabled(isDisabled)
+
+                if let onStickerTap {
+                    Button(action: onStickerTap) {
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: 24))
+                            .foregroundStyle(Color.accentColor.opacity(0.7))
+                    }
+                }
 
                 Button(action: onSend) {
                     Image(systemName: "arrow.up.circle.fill")

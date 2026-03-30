@@ -44,6 +44,13 @@ struct AgentsView: View {
                                     .fill(agent.accentColor.opacity(0.18))
                                     .frame(width: 38, height: 38)
                                     .overlay(Text(String(agent.name.prefix(1))).font(.footnote).foregroundStyle(agent.accentColor))
+                                    .overlay(alignment: .bottomTrailing) {
+                                        let status = PresenceService.getStatus(for: agent.id)
+                                        Circle()
+                                            .fill(status.swiftUIColor)
+                                            .frame(width: 10, height: 10)
+                                            .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+                                    }
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(agent.localizedName(language: localization.uiLanguage))
@@ -52,6 +59,20 @@ struct AgentsView: View {
                                         .font(DSTypography.caption2)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
+                                    // Agent skills badges
+                                    let skills = AgentSkillStore.getSkillsForAgent(agentId: agent.id)
+                                    if !skills.isEmpty {
+                                        HStack(spacing: 4) {
+                                            ForEach(skills.prefix(3), id: \.id) { skill in
+                                                Text(isZh ? skill.nameZh : skill.name)
+                                                    .font(.system(size: 9))
+                                                    .padding(.horizontal, 5)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
