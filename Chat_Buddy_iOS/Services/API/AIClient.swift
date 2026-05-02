@@ -1,31 +1,33 @@
 import Foundation
+import os.log
 
-/// Singleton AI client for chat completions, mirroring web's aiClient.js
-final class AIClient {
+actor AIClient {
     static let shared = AIClient()
 
-    private var apiClient: APIClient = APIClient(config: .default)
+    private var apiClient: APIClient
     private var lastConfig: APIConfig = .default
     private static let decoder = JSONDecoder()
+    private static let logger = Logger(subsystem: "com.chatbuddy", category: "AIClient")
 
-    private init() {}
+    private init() {
+        self.apiClient = APIClient(config: .default)
+    }
 
-    /// Send a chat completion request using the provided config.
     func sendChatCompletion(
         messages: [ChatMessage],
         model: String? = nil,
         temperature: Double? = nil,
         config: APIConfig
     ) async throws -> ChatCompletionResponse {
-        // Reuse the existing actor; only rebuild when the config has changed.
         if config != lastConfig {
             apiClient = APIClient(config: config)
             lastConfig = config
         }
 
+        let apiMessages = messages.map { APIMessage(from: $0) }
         let request = ChatCompletionRequest(
             model: model ?? config.model,
-            messages: messages,
+            messages: apiMessages,
             temperature: temperature ?? config.temperature,
             maxTokens: nil,
             stream: false
@@ -36,6 +38,7 @@ final class AIClient {
         do {
             return try Self.decoder.decode(ChatCompletionResponse.self, from: data)
         } catch {
+            Self.logger.error("Decoding error: \(error.localizedDescription)")
             throw APIError.decodingError(error)
         }
     }

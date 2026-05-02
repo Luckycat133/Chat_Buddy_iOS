@@ -8,10 +8,7 @@ struct DashboardView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var viewModel = DashboardViewModel()
     @State private var showFriends = false
-
-    private var isEffectivelyDark: Bool {
-        themeManager.mode == .dark || (themeManager.mode == .system && colorScheme == .dark)
-    }
+    @State private var friendsNavigationPath = NavigationPath()
 
     private let columns = [
         GridItem(.flexible(), spacing: DSSpacing.sm),
@@ -49,10 +46,12 @@ struct DashboardView: View {
             }
             .navigationTitle(localization.t("nav_dashboard"))
             .sheet(isPresented: $showFriends) {
-                NavigationStack { FriendsView() }
+                NavigationStack(path: $friendsNavigationPath) {
+                    FriendsView()
+                }
             }
             .background {
-                if themeManager.oledEnabled && isEffectivelyDark {
+                if themeManager.oledEnabled && themeManager.isEffectivelyDark(colorScheme) {
                     Color.black.ignoresSafeArea()
                 }
             }

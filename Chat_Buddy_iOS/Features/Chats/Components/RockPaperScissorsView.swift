@@ -207,24 +207,3 @@ struct RockPaperScissorsView: View {
         isCountingDown = false
     }
 }
-
-private extension View {
-    @ViewBuilder
-    func chatInlineNavigationTitle() -> some View {
-#if os(iOS)
-        navigationBarTitleDisplayMode(.inline)
-#else
-        self
-#endif
-    }
-}
-
-private extension ToolbarItemPlacement {
-    static var chatTopBarTrailing: ToolbarItemPlacement {
-#if os(iOS)
-        return .topBarTrailing
-#else
-        return .primaryAction
-#endif
-    }
-}

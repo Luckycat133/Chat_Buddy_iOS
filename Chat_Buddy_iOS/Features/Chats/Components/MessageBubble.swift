@@ -31,7 +31,7 @@ struct MessageBubble: View {
     }
 
     private var parsedType: ParsedType {
-        if message.content.hasPrefix("[FORWARDED:"), let body = forwardedBody(from: message.content) {
+        if message.content.hasPrefix("[FORWARDED]"), let body = forwardedBody(from: message.content) {
             return .forwarded(body)
         }
 
@@ -144,6 +144,9 @@ struct MessageBubble: View {
                 }
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isUser ? "You: \(message.content)" : "\(speakingPersona.localizedName(language: localization.uiLanguage)): \(message.content)")
+        .accessibilityHint(isUser ? "Your message" : "AI response")
     }
 
     // MARK: - Timestamp
@@ -313,9 +316,9 @@ struct MessageBubble: View {
                     .lineLimit(2)
 
                 ForEach(poll.options) { option in
-                    let totalVotes = max(1, poll.options.reduce(0) { $0 + $1.votes.count })
-                    let voteRate = Double(option.votes.count) / Double(totalVotes)
-                    let voted = option.votes.contains("user-me")
+                    let totalVotes = max(1, poll.options.reduce(0) { $0 + $1.voterIds.count })
+                    let voteRate = Double(option.voterIds.count) / Double(totalVotes)
+                    let voted = option.voterIds.contains(AppConstants.currentUserId)
 
                     Button {
                         guard !poll.isExpired else { return }
@@ -328,7 +331,7 @@ struct MessageBubble: View {
                                     .foregroundStyle(isUserBubble ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                                     .lineLimit(1)
                                 Spacer()
-                                Text("\(option.votes.count)")
+                                Text("\(option.voterIds.count)")
                                     .font(DSTypography.caption2)
                                     .foregroundStyle(isUserBubble ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
                                 if voted {

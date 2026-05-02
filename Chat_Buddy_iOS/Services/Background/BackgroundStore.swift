@@ -1,6 +1,6 @@
 import Foundation
 
-@Observable final class BackgroundStore {
+@Observable final class BackgroundStore: StoreReloading {
     private(set) var globalPresetId: String = "none"
     private(set) var globalAnimation: AnimatedBackground = .none
     private(set) var chatPresets: [String: String] = [:]          // sessionId → presetId

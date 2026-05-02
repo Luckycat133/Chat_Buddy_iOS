@@ -85,7 +85,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
         id = try container.decode(String.self, forKey: .id)
         role = try container.decode(Role.self, forKey: .role)
         content = try container.decode(String.self, forKey: .content)
-        timestamp = (try? container.decode(Date.self, forKey: .timestamp)) ?? Date()
+        timestamp = (try? container.decode(Date.self, forKey: .timestamp)) ?? .distantPast
         quotedMessageId = try? container.decode(String.self, forKey: .quotedMessageId)
         speakingPersonaId = try? container.decode(String.self, forKey: .speakingPersonaId)
         toolCall = try? container.decode(ToolCall.self, forKey: .toolCall)
@@ -110,7 +110,7 @@ struct ChatMessage: Codable, Identifiable, Equatable {
 /// OpenAI-compatible chat completion request
 struct ChatCompletionRequest: Codable {
     let model: String
-    let messages: [ChatMessage]
+    let messages: [APIMessage]
     let temperature: Double?
     let maxTokens: Int?
     let stream: Bool?
@@ -118,6 +118,22 @@ struct ChatCompletionRequest: Codable {
     enum CodingKeys: String, CodingKey {
         case model, messages, temperature, stream
         case maxTokens = "max_tokens"
+    }
+}
+
+/// Slim message format for API requests — only includes fields the API expects.
+struct APIMessage: Codable, Equatable {
+    let role: String
+    let content: String
+
+    init(role: String, content: String) {
+        self.role = role
+        self.content = content
+    }
+
+    init(from chatMessage: ChatMessage) {
+        self.role = chatMessage.role.rawValue
+        self.content = chatMessage.content
     }
 }
 

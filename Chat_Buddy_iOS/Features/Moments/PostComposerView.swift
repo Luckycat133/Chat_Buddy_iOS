@@ -74,7 +74,7 @@ struct PostComposerView: View {
 
                     // Photo picker row
                     if imageDataList.count < 4 {
-                        PhotosPicker(selection: $selectedItems, maxSelectionCount: 4, matching: .images) {
+                        PhotosPicker(selection: $selectedItems, maxSelectionCount: 4 - imageDataList.count, matching: .images) {
                             HStack {
                                 Image(systemName: "photo.on.rectangle.angled")
                                 Text(localization.t("moments_photo"))
@@ -86,6 +86,18 @@ struct PostComposerView: View {
                             }
                             .padding(.vertical, 4)
                         }
+                    } else {
+                        HStack {
+                            Image(systemName: "photo.on.rectangle.angled")
+                            Text(localization.t("moments_photo"))
+                                .font(.system(size: 14))
+                            Spacer()
+                            Text(localization.t("moments_photo_limit"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                        .opacity(0.5)
                     }
                 }
                 .padding(DSSpacing.md)

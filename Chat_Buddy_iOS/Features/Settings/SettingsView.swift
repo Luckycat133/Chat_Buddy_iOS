@@ -5,8 +5,6 @@ struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(SocialService.self) private var socialService
 
-    private var isZh: Bool { localization.uiLanguage.resolved == .zh }
-
     var body: some View {
         NavigationStack {
             Form {
@@ -63,7 +61,7 @@ struct SettingsView: View {
                         SettingRow(
                             icon: "chart.bar.fill",
                             iconColor: .pink,
-                            title: isZh ? "排行榜" : "Leaderboard"
+                            title: localization.t("leaderboard_title")
                         )
                     }
                 }
@@ -169,7 +167,7 @@ struct SettingsView: View {
                 }
 
                 // MARK: - Advanced Tools
-                Section(isZh ? "高级工具" : "Advanced Tools") {
+                Section(localization.t("advanced_tools")) {
                     NavigationLink {
                         AgentsView()
                     } label: {
@@ -186,7 +184,7 @@ struct SettingsView: View {
                         SettingRow(
                             icon: "magnifyingglass",
                             iconColor: .brown,
-                            title: isZh ? "全局搜索" : "Global Search"
+                            title: localization.t("global_search_title")
                         )
                     }
 
@@ -196,7 +194,7 @@ struct SettingsView: View {
                         SettingRow(
                             icon: "books.vertical.fill",
                             iconColor: .green,
-                            title: isZh ? "知识库" : "Knowledge Base"
+                            title: localization.t("knowledge_base_title")
                         )
                     }
 
@@ -206,7 +204,7 @@ struct SettingsView: View {
                         SettingRow(
                             icon: "cpu.fill",
                             iconColor: .blue,
-                            title: isZh ? "模型切换" : "Model Switcher"
+                            title: localization.t("model_switcher_title")
                         )
                     }
 
@@ -216,7 +214,7 @@ struct SettingsView: View {
                         SettingRow(
                             icon: "point.3.connected.trianglepath.dotted",
                             iconColor: .teal,
-                            title: isZh ? "知识图谱" : "Knowledge Graph"
+                            title: localization.t("knowledge_graph_title")
                         )
                     }
 
@@ -226,7 +224,7 @@ struct SettingsView: View {
                         SettingRow(
                             icon: "graduationcap.fill",
                             iconColor: .orange,
-                            title: isZh ? "学习报告" : "Learning Report"
+                            title: localization.t("learning_report_title")
                         )
                     }
                 }
@@ -263,7 +261,7 @@ struct SettingsView: View {
                         SettingRow(
                             icon: "questionmark.circle.fill",
                             iconColor: .teal,
-                            title: isZh ? "帮助" : "Help"
+                            title: localization.t("help_title")
                         )
                     }
 

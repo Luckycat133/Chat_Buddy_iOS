@@ -1,18 +1,13 @@
 import Foundation
 
-/// Configuration for the API client, matching web's apiConfig system
 struct APIConfig: Codable, Equatable {
     var baseURL: String
-    /// API key is stored in the Keychain and is never serialised to disk.
-    /// `APIConfigStore` is responsible for populating this field at runtime.
     var apiKey: String = ""
     var model: String
     var temperature: Double
     var timeout: TimeInterval
     var maxRetries: Int
 
-    /// Coding keys intentionally omit `apiKey` so it is never written to
-    /// UserDefaults or exported backup files.
     enum CodingKeys: String, CodingKey {
         case baseURL, model, temperature, timeout, maxRetries
     }
@@ -26,8 +21,13 @@ struct APIConfig: Codable, Equatable {
         maxRetries: 3
     )
 
-    /// Whether the config has the minimum fields filled
     var isValid: Bool {
-        !baseURL.isEmpty && !apiKey.isEmpty && !model.isEmpty
+        guard !baseURL.isEmpty, !apiKey.isEmpty, !model.isEmpty else { return false }
+        guard URL(string: baseURL) != nil else { return false }
+        guard baseURL.hasPrefix("http://") || baseURL.hasPrefix("https://") else { return false }
+        guard (0.1...2).contains(temperature) else { return false }
+        guard timeout > 0 else { return false }
+        guard maxRetries >= 0 else { return false }
+        return true
     }
 }

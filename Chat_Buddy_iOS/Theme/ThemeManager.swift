@@ -1,23 +1,12 @@
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
-#elseif canImport(AppKit)
-import AppKit
 #endif
 
-/// Theme mode matching web's system/light/dark
 enum ThemeMode: String, CaseIterable, Codable {
     case system = "system"
     case light = "light"
     case dark = "dark"
-
-    var displayName: String {
-        switch self {
-        case .system: return "System"
-        case .light: return "Light"
-        case .dark: return "Dark"
-        }
-    }
 
     var localizedKey: String {
         switch self {
@@ -36,21 +25,11 @@ enum ThemeMode: String, CaseIterable, Codable {
     }
 }
 
-/// Animation intensity levels matching web's anim-none/subtle/standard/intense
 enum AnimationIntensity: String, CaseIterable, Codable {
     case none = "none"
     case subtle = "subtle"
     case standard = "standard"
     case intense = "intense"
-
-    var displayName: String {
-        switch self {
-        case .none: return "Off"
-        case .subtle: return "Subtle"
-        case .standard: return "Standard"
-        case .intense: return "Intense"
-        }
-    }
 
     var localizedKey: String {
         switch self {
@@ -61,13 +40,26 @@ enum AnimationIntensity: String, CaseIterable, Codable {
         }
     }
 
-    /// Duration multiplier for animations
     var durationMultiplier: Double {
         switch self {
         case .none: return 0
         case .subtle: return 0.5
         case .standard: return 1.0
         case .intense: return 1.5
+        }
+    }
+
+    var shouldAnimate: Bool {
+        self != .none
+    }
+}
+
+extension View {
+    func themedAnimation(_ animation: Animation, intensity: AnimationIntensity) -> some View {
+        if intensity.shouldAnimate {
+            return AnyView(self.animation(animation))
+        } else {
+            return AnyView(self)
         }
     }
 }
@@ -92,39 +84,31 @@ final class ThemeManager {
         }
     }
 
-    /// Resolved color scheme for SwiftUI .preferredColorScheme()
     var resolvedColorScheme: ColorScheme? {
         switch mode {
-        case .system: return nil // follow system
+        case .system: return nil
         case .light: return .light
         case .dark: return .dark
         }
     }
 
-    /// Whether the effective appearance is dark
-    var isDarkMode: Bool {
+    func isEffectivelyDark(_ colorScheme: ColorScheme = .light) -> Bool {
         switch mode {
         case .dark: return true
         case .light: return false
-        case .system:
-            // Cannot determine system appearance in @Observable without environment
-            // Will be resolved in view layer
-            return false
+        case .system: return colorScheme == .dark
         }
     }
 
-    /// Background color considering OLED mode
-    var backgroundColor: Color {
-        if oledEnabled && isDarkMode {
+    func backgroundColor(_ colorScheme: ColorScheme = .light) -> Color {
+        if oledEnabled && isEffectivelyDark(colorScheme) {
             return .black
         }
-#if canImport(UIKit)
+        #if canImport(UIKit)
         return Color(uiColor: .systemBackground)
-#elseif canImport(AppKit)
+        #else
         return Color(nsColor: .windowBackgroundColor)
-#else
-        return Color(.background)
-#endif
+        #endif
     }
 
     init() {

@@ -5,7 +5,7 @@ import UIKit
 
 /// Observable store for the Moments social feed.
 /// Persists a single `MomentsData` blob at `chat-buddy:moments`.
-@Observable final class MomentsStore {
+@Observable final class MomentsStore: StoreReloading {
     private(set) var posts: [MomentPost] = []
     var lastAIPostTime: [String: Double] = [:]
     var draftText: String = ""

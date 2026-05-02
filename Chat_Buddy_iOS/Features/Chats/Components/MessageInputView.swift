@@ -49,6 +49,8 @@ struct MessageInputView: View {
                         .foregroundStyle(canSend ? Color.accentColor : Color.secondary.opacity(0.35))
                 }
                 .disabled(!canSend)
+                .accessibilityLabel("Send message")
+                .accessibilityHint(canSend ? "Send your message" : "Type a message first")
             }
             .padding(.horizontal, DSSpacing.md)
             .padding(.vertical, DSSpacing.sm)

@@ -1,6 +1,6 @@
 import Foundation
 
-@Observable final class UserProfileStore {
+@Observable final class UserProfileStore: StoreReloading {
     private(set) var profile: UserProfile = .default
 
     init() { load() }

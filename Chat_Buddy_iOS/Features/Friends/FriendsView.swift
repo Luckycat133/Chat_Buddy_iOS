@@ -10,6 +10,7 @@ struct FriendsView: View {
     @State private var showCreateSheet = false
     @State private var editingPersona: Persona?
     @State private var personaListVersion = 0
+    @State private var personaToDelete: Persona?
 
     private var isZh: Bool { localization.uiLanguage.resolved == .zh }
 
@@ -152,8 +153,7 @@ struct FriendsView: View {
                                 }
 
                                 Button(role: .destructive) {
-                                    PersonaStore.deleteCustomPersona(id: persona.id)
-                                    personaListVersion += 1
+                                    personaToDelete = persona
                                 } label: {
                                     Label(isZh ? "删除自定义好友" : "Delete custom friend", systemImage: "trash")
                                 }
@@ -192,6 +192,23 @@ struct FriendsView: View {
                 PersonaStore.upsertCustomPersona(updated)
                 personaListVersion += 1
             }
+        }
+        .alert(localization.t("delete_confirm_title"), isPresented: .init(
+            get: { personaToDelete != nil },
+            set: { if !$0 { personaToDelete = nil } }
+        )) {
+            Button(localization.t("delete"), role: .destructive) {
+                if let persona = personaToDelete {
+                    PersonaStore.deleteCustomPersona(id: persona.id)
+                    personaListVersion += 1
+                    personaToDelete = nil
+                }
+            }
+            Button(localization.t("cancel"), role: .cancel) {
+                personaToDelete = nil
+            }
+        } message: {
+            Text(localization.t("delete_confirm_message"))
         }
     }
 

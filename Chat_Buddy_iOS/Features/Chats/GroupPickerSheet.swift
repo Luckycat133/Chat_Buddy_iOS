@@ -51,24 +51,34 @@ struct GroupPickerSheet: View {
             .toolbar {
                 #if os(iOS)
                 ToolbarItem(placement: .topBarLeading) {
-                #else
-                ToolbarItem(placement: .automatic) {
-                #endif
                     Button { isPresented = false } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                     }
                 }
-                #if os(iOS)
-                ToolbarItem(placement: .topBarTrailing) {
                 #else
                 ToolbarItem(placement: .automatic) {
+                    Button { isPresented = false } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                }
                 #endif
+                #if os(iOS)
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(localization.t("chats_create_group")) {
                         createGroup()
                     }
                     .fontWeight(.semibold)
                     .disabled(!canCreate)
                 }
+                #else
+                ToolbarItem(placement: .automatic) {
+                    Button(localization.t("chats_create_group")) {
+                        createGroup()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(!canCreate)
+                }
+                #endif
             }
             .safeAreaInset(edge: .bottom) {
                 if !selectedIds.isEmpty {

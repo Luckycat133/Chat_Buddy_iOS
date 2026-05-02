@@ -1,8 +1,28 @@
 import Foundation
 
-/// Handles importing app data from JSON backup
+enum ImportCompatibility {
+    case fullyCompatible
+    case newerVersion(warning: String)
+    case incompatibleVersion(error: String)
+}
+
+struct DataImportError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+
+    static let missingVersion = DataImportError(message: "Backup file is missing a version identifier and cannot be safely imported.")
+    static func incompatible(_ version: String, _ minSupported: String) -> DataImportError {
+        DataImportError(message: "Backup version \(version) is older than the minimum supported version (\(minSupported)). Please update your backup or contact support.")
+    }
+}
+
+protocol StoreReloading {
+    func reloadFromStorage()
+}
+
 struct DataImporter {
-    /// Import a backup, returning the count of restored items
+    static let minimumSupportedVersion = "0.1.0"
+
     @discardableResult
     static func importBackup(
         from data: Data,
@@ -11,24 +31,22 @@ struct DataImporter {
         themeManager: ThemeManager,
         accentColorManager: AccentColorManager,
         appState: AppState,
-        chatStore: ChatStore,
-        affinityService: AffinityService,
-        bookmarkService: BookmarkService,
-        draftService: DraftService,
-        momentsStore: MomentsStore,
-        backgroundStore: BackgroundStore,
-        userProfileStore: UserProfileStore,
-        socialService: SocialService,
-        friendService: FriendService,
-        memoryService: MemoryService
+        stores: [any StoreReloading]
     ) throws -> Int {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let backup = try decoder.decode(AppBackup.self, from: data)
 
+        let compat = checkCompatibility(backup)
+        switch compat {
+        case .incompatibleVersion(let error):
+            throw DataImportError(message: error)
+        case .newerVersion, .fullyCompatible:
+            break
+        }
+
         var count = 0
 
-        // Restore all serialized blobs first so store-backed domains come back.
         if let raw = backup.storageData {
             try validateStorageData(raw, decoder: decoder)
             count += try StorageService.shared.importAllValidated(raw)
@@ -38,19 +56,16 @@ struct DataImporter {
             count += try restoreMomentsImages(images)
         }
 
-        // Restore API config
         if let config = backup.apiConfig {
             configStore.activeConfig = config
             count += 1
         }
 
-        // Restore profiles
         if let profiles = backup.apiProfiles {
             configStore.profiles = profiles
             count += profiles.count
         }
 
-        // Restore settings
         if let settings = backup.settings {
             if let lang = settings["uiLanguage"], let appLang = AppLanguage(rawValue: lang) {
                 localization.uiLanguage = appLang
@@ -78,20 +93,10 @@ struct DataImporter {
             }
         }
 
-        reloadAllStores(
-            configStore: configStore,
-            accentColorManager: accentColorManager,
-            chatStore: chatStore,
-            affinityService: affinityService,
-            bookmarkService: bookmarkService,
-            draftService: draftService,
-            momentsStore: momentsStore,
-            backgroundStore: backgroundStore,
-            userProfileStore: userProfileStore,
-            socialService: socialService,
-            friendService: friendService,
-            memoryService: memoryService
-        )
+        for store in stores {
+            store.reloadFromStorage()
+        }
+        PersonaStore.invalidateCache()
 
         return count
     }
@@ -123,7 +128,6 @@ struct DataImporter {
                 _ = try decoder.decode([Persona].self, from: blob)
             case "social", "backgrounds", "bookmarks", "drafts", "userProfile", "accentColor", "intimacy",
                  "friends.groups", "friends.meta", "knowledgeBase", "knowledgeGraph.custom":
-                // Validate JSON payload structure without coupling to private nested structs.
                 _ = try JSONSerialization.jsonObject(with: blob)
             default:
                 break
@@ -134,51 +138,92 @@ struct DataImporter {
     private static func restoreMomentsImages(_ images: [String: Data]) throws -> Int {
         let fileManager = FileManager.default
         let directory = MomentsStore.momentsDirectory()
-        let existing = try fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )
-        for file in existing where !file.hasDirectoryPath {
-            try? fileManager.removeItem(at: file)
-        }
+
+        let tempDir = directory.appendingPathComponent("_import_tmp")
+        try? fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         var count = 0
+        var success = true
         for (filename, data) in images {
-            // Basic path traversal guard.
-            let cleanName = filename.replacingOccurrences(of: "/", with: "_")
-            let target = directory.appendingPathComponent(cleanName)
-            try data.write(to: target, options: .atomic)
-            count += 1
+            let safeName = URL(fileURLWithPath: filename).lastPathComponent
+            guard !safeName.isEmpty else { continue }
+            let target = tempDir.appendingPathComponent(safeName)
+            do {
+                try data.write(to: target, options: .atomic)
+                count += 1
+            } catch {
+                success = false
+            }
         }
+
+        if success || count > 0 {
+            let existing = try fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            for file in existing where !file.hasDirectoryPath && file.lastPathComponent != "_import_tmp" {
+                try? fileManager.removeItem(at: file)
+            }
+
+            let imported = try fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+            for file in imported {
+                let dest = directory.appendingPathComponent(file.lastPathComponent)
+                try? fileManager.moveItem(at: file, to: dest)
+            }
+            try? fileManager.removeItem(at: tempDir)
+        } else {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
         return count
     }
 
-    private static func reloadAllStores(
-        configStore: APIConfigStore,
-        accentColorManager: AccentColorManager,
-        chatStore: ChatStore,
-        affinityService: AffinityService,
-        bookmarkService: BookmarkService,
-        draftService: DraftService,
-        momentsStore: MomentsStore,
-        backgroundStore: BackgroundStore,
-        userProfileStore: UserProfileStore,
-        socialService: SocialService,
-        friendService: FriendService,
-        memoryService: MemoryService
-    ) {
-        configStore.reloadFromStorage()
-        accentColorManager.reloadFromStorage()
-        chatStore.reloadFromStorage()
-        affinityService.reloadFromStorage()
-        bookmarkService.reloadFromStorage()
-        draftService.reloadFromStorage()
-        momentsStore.reloadFromStorage()
-        backgroundStore.reloadFromStorage()
-        userProfileStore.reloadFromStorage()
-        socialService.reloadFromStorage()
-        friendService.reloadFromStorage()
-        memoryService.reloadFromStorage()
+    private static func checkCompatibility(_ backup: AppBackup) -> ImportCompatibility {
+        let version = backup.version
+
+        guard !version.isEmpty else {
+            return .incompatibleVersion(error: DataImportError.missingVersion.message)
+        }
+
+        let current = AppConstants.appVersion
+
+        if version == current {
+            return .fullyCompatible
+        }
+
+        if isVersion(version, olderThan: minimumSupportedVersion) {
+            return .incompatibleVersion(
+                error: DataImportError.incompatible(version, minimumSupportedVersion).message
+            )
+        }
+
+        if isVersion(version, newerThan: current) {
+            return .newerVersion(
+                warning: "Backup was created with v\(version) which is newer than this app (v\(current)). Some data may not display correctly."
+            )
+        }
+
+        return .fullyCompatible
+    }
+
+    private static func isVersion(_ version: String, olderThan minimum: String) -> Bool {
+        compareVersions(version, minimum) == .orderedAscending
+    }
+
+    private static func isVersion(_ version: String, newerThan current: String) -> Bool {
+        compareVersions(version, current) == .orderedDescending
+    }
+
+    private static func compareVersions(_ a: String, _ b: String) -> ComparisonResult {
+        let aParts = a.split(separator: ".").compactMap { Int($0) }
+        let bParts = b.split(separator: ".").compactMap { Int($0) }
+        let maxLen = max(aParts.count, bParts.count)
+        for i in 0..<maxLen {
+            let aVal = i < aParts.count ? aParts[i] : 0
+            let bVal = i < bParts.count ? bParts[i] : 0
+            if aVal != bVal { return aVal < bVal ? .orderedAscending : .orderedDescending }
+        }
+        return .orderedSame
     }
 }

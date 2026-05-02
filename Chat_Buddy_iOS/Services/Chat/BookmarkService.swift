@@ -1,7 +1,7 @@
 import Foundation
 
 /// Observable store for bookmarked messages, persisted via UserDefaults
-@Observable final class BookmarkService {
+@Observable final class BookmarkService: StoreReloading {
     private(set) var bookmarks: [Bookmark] = []
     private static let key = "chat-buddy:bookmarks"
 

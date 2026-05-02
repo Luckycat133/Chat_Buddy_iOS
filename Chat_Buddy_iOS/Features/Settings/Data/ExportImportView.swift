@@ -122,16 +122,7 @@ struct ExportImportView: View {
                     themeManager: themeManager,
                     accentColorManager: accentColorManager,
                     appState: appState,
-                    chatStore: chatStore,
-                    affinityService: affinityService,
-                    bookmarkService: bookmarkService,
-                    draftService: draftService,
-                    momentsStore: momentsStore,
-                    backgroundStore: backgroundStore,
-                    userProfileStore: userProfileStore,
-                    socialService: socialService,
-                    friendService: friendService,
-                    memoryService: memoryService
+                    stores: [chatStore, affinityService, bookmarkService, draftService, momentsStore, backgroundStore, userProfileStore, socialService, friendService, memoryService]
                 )
                 alertMessage = localization.t("import_success", params: ["count": "\(count)"])
                 showAlert = true

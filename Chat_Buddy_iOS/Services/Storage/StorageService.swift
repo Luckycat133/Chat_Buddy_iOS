@@ -1,8 +1,15 @@
 import Foundation
+import os.log
 
-/// UserDefaults wrapper with namespace prefix, mirroring the web StorageService.
 final class StorageService {
     static let shared = StorageService()
+
+    private static let logger = Logger(subsystem: "com.chatbuddy", category: "StorageService")
+    private static let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        return e
+    }()
+    private static let decoder = JSONDecoder()
 
     enum ImportValidationError: LocalizedError {
         case keyNotAllowed(String)
@@ -51,47 +58,62 @@ final class StorageService {
         self.defaults = defaults
     }
 
-    /// Get a Codable value from storage
     func get<T: Codable>(_ key: String, default defaultValue: T) -> T {
         let fullKey = prefixedKey(key)
         guard let data = defaults.data(forKey: fullKey) else { return defaultValue }
         do {
-            return try JSONDecoder().decode(T.self, from: data)
+            return try Self.decoder.decode(T.self, from: data)
         } catch {
-            print("[StorageService] Error decoding key \"\(key)\": \(error)")
+            Self.logger.error("Error decoding key \"\(key)\": \(error.localizedDescription)")
             return defaultValue
         }
     }
 
-    /// Get an optional Codable value from storage
     func get<T: Codable>(_ key: String) -> T? {
         let fullKey = prefixedKey(key)
         guard let data = defaults.data(forKey: fullKey) else { return nil }
         do {
-            return try JSONDecoder().decode(T.self, from: data)
+            return try Self.decoder.decode(T.self, from: data)
         } catch {
-            print("[StorageService] Error decoding key \"\(key)\": \(error)")
+            Self.logger.error("Error decoding key \"\(key)\": \(error.localizedDescription)")
             return nil
         }
     }
 
-    /// Save a Codable value to storage
-    func set<T: Codable>(_ key: String, value: T) {
+    @discardableResult
+    func set<T: Codable>(_ key: String, value: T) -> Bool {
         let fullKey = prefixedKey(key)
         do {
-            let data = try JSONEncoder().encode(value)
+            let data = try Self.encoder.encode(value)
             defaults.set(data, forKey: fullKey)
+            return true
         } catch {
-            print("[StorageService] Error encoding key \"\(key)\": \(error)")
+            Self.logger.error("Error encoding key \"\(key)\": \(error.localizedDescription)")
+            return false
         }
     }
 
-    /// Remove a value from storage
+    /// Asynchronous save — encodes off the main thread for large payloads.
+    /// The caller should use this when persisting large collections (e.g. chatSessions).
+    func setAsync<T: Codable>(_ key: String, value: T) {
+        let fullKey = prefixedKey(key)
+        let defaultsRef = defaults
+        Task.detached(priority: .utility) {
+            do {
+                let data = try Self.encoder.encode(value)
+                await MainActor.run {
+                    defaultsRef.set(data, forKey: fullKey)
+                }
+            } catch {
+                Self.logger.error("Error encoding key \"\(key)\" async: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func remove(_ key: String) {
         defaults.removeObject(forKey: prefixedKey(key))
     }
 
-    /// Clear all app-specific keys
     func clear() {
         let allKeys = defaults.dictionaryRepresentation().keys
         for key in allKeys where key.hasPrefix(prefix) {
@@ -99,7 +121,6 @@ final class StorageService {
         }
     }
 
-    /// Export all app data as a dictionary
     func exportAll() -> [String: Data] {
         var result: [String: Data] = [:]
         let allKeys = defaults.dictionaryRepresentation().keys
@@ -112,17 +133,15 @@ final class StorageService {
         return result
     }
 
-    /// Import data from a dictionary
     func importAll(_ data: [String: Data]) -> Int {
         do {
             return try importAllValidated(data)
         } catch {
-            print("[StorageService] Import rejected: \(error)")
+            Self.logger.error("Import rejected: \(error.localizedDescription)")
             return 0
         }
     }
 
-    /// Import data with key + size validation.
     @discardableResult
     func importAllValidated(_ data: [String: Data]) throws -> Int {
         var count = 0

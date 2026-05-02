@@ -3,6 +3,7 @@ import SwiftUI
 struct OnboardingView: View {
     @Environment(LocalizationManager.self) private var localization
     @Environment(AppState.self) private var appState
+    @Environment(ThemeManager.self) private var themeManager
     @State private var currentPage = 0
 
     private let pages: [(icon: String, titleKey: String, descKey: String, color: Color)] = [
@@ -73,7 +74,7 @@ struct OnboardingView: View {
                     Capsule()
                         .fill(index == currentPage ? Color.accentColor : Color.secondary.opacity(0.3))
                         .frame(width: index == currentPage ? 24 : 8, height: 8)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: currentPage)
+                        .themedAnimation(.spring(response: 0.35, dampingFraction: 0.7), intensity: themeManager.animationIntensity)
                 }
             }
             .padding(.bottom, DSSpacing.lg)
@@ -82,7 +83,7 @@ struct OnboardingView: View {
             HStack(spacing: DSSpacing.md) {
                 if currentPage > 0 {
                     Button {
-                        withAnimation(.spring(response: 0.35)) { currentPage -= 1 }
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { currentPage -= 1 }
                     } label: {
                         Text(localization.t("onboarding_back"))
                             .frame(maxWidth: .infinity)
@@ -92,7 +93,7 @@ struct OnboardingView: View {
 
                 Button {
                     if currentPage < pages.count - 1 {
-                        withAnimation(.spring(response: 0.35)) { currentPage += 1 }
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { currentPage += 1 }
                     } else {
                         appState.completeOnboarding()
                     }

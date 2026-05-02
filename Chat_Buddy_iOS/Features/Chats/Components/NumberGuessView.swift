@@ -7,7 +7,7 @@ struct NumberGuessView: View {
 
     private let maxAttempts = 7
     private let winPoints = 30
-    private let secretNumber = Int.random(in: 1...100)
+    @State private var secretNumber = Int.random(in: 1...100)
 
     @State private var guessText = ""
     @State private var attempts: [Int] = []
@@ -192,26 +192,5 @@ struct NumberGuessView: View {
                 feedback = .tooLow
             }
         }
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func chatInlineNavigationTitle() -> some View {
-#if os(iOS)
-        navigationBarTitleDisplayMode(.inline)
-#else
-        self
-#endif
-    }
-}
-
-private extension ToolbarItemPlacement {
-    static var chatTopBarTrailing: ToolbarItemPlacement {
-#if os(iOS)
-        return .topBarTrailing
-#else
-        return .primaryAction
-#endif
     }
 }

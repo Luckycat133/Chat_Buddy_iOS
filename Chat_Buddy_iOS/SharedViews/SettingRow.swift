@@ -28,6 +28,7 @@ struct SettingRow<Trailing: View>: View {
                 .font(.system(size: DSIconSize.md))
                 .foregroundStyle(iconColor)
                 .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -44,5 +45,8 @@ struct SettingRow<Trailing: View>: View {
             trailing()
         }
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityHint(subtitle ?? "")
     }
 }

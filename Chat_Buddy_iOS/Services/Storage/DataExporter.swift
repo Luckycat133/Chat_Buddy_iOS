@@ -1,25 +1,21 @@
 import Foundation
 import UniformTypeIdentifiers
 import SwiftUI
+import os.log
 
-/// App backup structure for JSON export
 struct AppBackup: Codable {
     let version: String
     let exportDate: Date
-    /// Raw blobs for all `StorageService`-persisted keys.
-    /// Includes chats, moments, social, memories, bookmarks, drafts, backgrounds, etc.
     let storageData: [String: Data]?
-    /// Files in Documents/moments keyed by filename.
     let momentsImages: [String: Data]?
-    /// API config is exported WITHOUT the apiKey — key lives only in the Keychain.
     let apiConfig: APIConfig?
-    /// Profiles are exported WITHOUT per-profile apiKeys for the same reason.
     let apiProfiles: [APIProfile]?
     let settings: [String: String]?
 }
 
-/// Handles exporting app data to JSON
 struct DataExporter {
+    private static let logger = Logger(subsystem: "com.chatbuddy", category: "DataExporter")
+
     static func exportAll(configStore: APIConfigStore) -> AppBackup {
         AppBackup(
             version: AppConstants.appVersion,
@@ -35,7 +31,7 @@ struct DataExporter {
     static func exportToData(configStore: APIConfigStore) throws -> Data {
         let backup = exportAll(configStore: configStore)
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = .sortedKeys
         encoder.dateEncodingStrategy = .iso8601
         return try encoder.encode(backup)
     }
@@ -52,11 +48,11 @@ struct DataExporter {
         if let theme = defaults.string(forKey: UserDefaults.Keys.themeMode) {
             settings["themeMode"] = theme
         }
-        settings["oledEnabled"] = defaults.bool(forKey: UserDefaults.Keys.oledEnabled) ? "true" : "false"
+        settings["oledEnabled"] = String(describing: defaults.bool(forKey: UserDefaults.Keys.oledEnabled))
         if let anim = defaults.string(forKey: UserDefaults.Keys.animationIntensity) {
             settings["animationIntensity"] = anim
         }
-        settings["hasCompletedOnboarding"] = defaults.bool(forKey: UserDefaults.Keys.hasCompletedOnboarding) ? "true" : "false"
+        settings["hasCompletedOnboarding"] = String(describing: defaults.bool(forKey: UserDefaults.Keys.hasCompletedOnboarding))
         return settings
     }
 
@@ -67,20 +63,23 @@ struct DataExporter {
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         ) else {
+            logger.warning("Could not read moments directory for export")
             return nil
         }
 
         var result: [String: Data] = [:]
         for url in urls where !url.hasDirectoryPath {
-            if let data = try? Data(contentsOf: url, options: .mappedIfSafe) {
+            do {
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
                 result[url.lastPathComponent] = data
+            } catch {
+                logger.error("Failed to read moments image \(url.lastPathComponent): \(error.localizedDescription)")
             }
         }
         return result.isEmpty ? nil : result
     }
 }
 
-/// Document type for the backup file
 struct BackupDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json] }
 

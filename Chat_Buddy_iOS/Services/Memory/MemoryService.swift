@@ -7,7 +7,7 @@ import Foundation
 /// - Deduplicate near-identical facts (Jaccard similarity > 0.85)
 /// - Apply time-decay soft-deletion on init
 /// - Track `lastRecalledAt` when memories are injected into prompts
-@Observable final class MemoryService {
+@Observable final class MemoryService: StoreReloading {
 
     // MARK: - State
 

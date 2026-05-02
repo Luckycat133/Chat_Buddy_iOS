@@ -74,14 +74,3 @@ struct BookmarksSheet: View {
         .frame(maxHeight: .infinity)
     }
 }
-
-private extension View {
-    @ViewBuilder
-    func chatInlineNavigationTitle() -> some View {
-#if os(iOS)
-        navigationBarTitleDisplayMode(.inline)
-#else
-        self
-#endif
-    }
-}

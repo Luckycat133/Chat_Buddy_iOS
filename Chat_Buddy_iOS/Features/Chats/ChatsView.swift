@@ -21,6 +21,7 @@ struct ChatsView: View {
     @State private var showPersonaPicker = false
     @State private var showGroupPicker = false
     @State private var navigationPath = NavigationPath()
+    @State private var sessionToDelete: ChatSession?
 
     private var pinnedSessions: [ChatSession] { chatStore.sessions.filter { $0.isPinned } }
     private var unpinnedSessions: [ChatSession] { chatStore.sessions.filter { !$0.isPinned } }
@@ -57,6 +58,22 @@ struct ChatsView: View {
             }
             .sheet(isPresented: $showGroupPicker) {
                 GroupPickerSheet(navigationPath: $navigationPath, isPresented: $showGroupPicker)
+            }
+            .alert(localization.t("chats_delete_confirm_title"), isPresented: .init(
+                get: { sessionToDelete != nil },
+                set: { if !$0 { sessionToDelete = nil } }
+            )) {
+                Button(localization.t("chats_delete"), role: .destructive) {
+                    if let session = sessionToDelete {
+                        withAnimation { chatStore.deleteSession(session) }
+                        sessionToDelete = nil
+                    }
+                }
+                Button(localization.t("cancel"), role: .cancel) {
+                    sessionToDelete = nil
+                }
+            } message: {
+                Text(localization.t("chats_delete_confirm_message"))
             }
         }
     }
@@ -123,7 +140,7 @@ struct ChatsView: View {
             }
             Divider()
             Button(role: .destructive) {
-                withAnimation { chatStore.deleteSession(session) }
+                sessionToDelete = session
             } label: {
                 Label(localization.t("chats_delete"), systemImage: "trash")
             }

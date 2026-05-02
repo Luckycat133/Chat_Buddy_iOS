@@ -34,19 +34,20 @@ struct MemoriesView: View {
             .toolbar {
                 #if os(iOS)
                 ToolbarItem(placement: .topBarLeading) {
-                #else
-                ToolbarItem(placement: .automatic) {
-                #endif
                     Button(localization.t("memories_add")) {
                         withAnimation { showAddForm.toggle() }
                     }
                 }
+                #else
+                ToolbarItem(placement: .automatic) {
+                    Button(localization.t("memories_add")) {
+                        withAnimation { showAddForm.toggle() }
+                    }
+                }
+                #endif
                 if !memories.isEmpty {
                     #if os(iOS)
                     ToolbarItem(placement: .topBarTrailing) {
-                    #else
-                    ToolbarItem(placement: .automatic) {
-                    #endif
                         Button(role: .destructive) {
                             showClearAlert = true
                         } label: {
@@ -54,6 +55,16 @@ struct MemoriesView: View {
                                 .foregroundStyle(.red)
                         }
                     }
+                    #else
+                    ToolbarItem(placement: .automatic) {
+                        Button(role: .destructive) {
+                            showClearAlert = true
+                        } label: {
+                            Text(localization.t("memories_clear"))
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    #endif
                 }
             }
             .alert(localization.t("memories_clear_confirm"), isPresented: $showClearAlert) {

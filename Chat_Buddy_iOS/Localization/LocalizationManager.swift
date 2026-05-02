@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Supported UI languages
 enum AppLanguage: String, CaseIterable, Codable {
     case system = "system"
     case en = "en"
@@ -14,7 +13,6 @@ enum AppLanguage: String, CaseIterable, Codable {
         }
     }
 
-    /// Resolve system language to a concrete language
     var resolved: AppLanguage {
         guard self == .system else { return self }
         let preferred = Locale.preferredLanguages.first ?? "en"
@@ -22,7 +20,6 @@ enum AppLanguage: String, CaseIterable, Codable {
     }
 }
 
-/// AI response language
 enum AILanguage: String, CaseIterable, Codable {
     case auto = "auto"
     case en = "en"
@@ -37,7 +34,6 @@ enum AILanguage: String, CaseIterable, Codable {
     }
 }
 
-/// Runtime localization manager with in-app language switching.
 @Observable
 final class LocalizationManager {
     var uiLanguage: AppLanguage {
@@ -53,17 +49,23 @@ final class LocalizationManager {
         }
     }
 
-    /// The resolved language code for AI responses
     var resolvedAILanguage: String {
         aiLanguage == .auto ? resolvedLanguage.rawValue : aiLanguage.rawValue
     }
 
-    /// The effective language after resolving "system"
     var resolvedLanguage: AppLanguage {
         uiLanguage.resolved
     }
 
     private var bundle: Bundle = .main
+
+    private var resolvedLangCode: String {
+        switch resolvedLanguage {
+        case .en: return "en"
+        case .zh: return "zh-Hans"
+        case .system: return "en"
+        }
+    }
 
     init() {
         let savedUI = UserDefaults.standard.string(forKey: UserDefaults.Keys.uiLanguage)
@@ -75,31 +77,23 @@ final class LocalizationManager {
         updateBundle()
     }
 
-    /// Translate a key with optional parameter interpolation.
-    /// Usage: t("greeting_hello", params: ["name": "Luna"])
     func t(_ key: String, params: [String: String]? = nil) -> String {
-        let langCode: String
-        switch resolvedLanguage {
-        case .en: langCode = "en"
-        case .zh: langCode = "zh-Hans"
-        case .system: langCode = "en"
-        }
+        var result = bundle.localizedString(forKey: key, value: nil, table: nil)
 
-        // Try to find the localized string from the appropriate bundle
-        var result: String
-        if let path = Bundle.main.path(forResource: langCode, ofType: "lproj"),
-           let langBundle = Bundle(path: path) {
-            result = langBundle.localizedString(forKey: key, value: nil, table: nil)
-        } else {
-            result = NSLocalizedString(key, bundle: bundle, comment: "")
-        }
-
-        // If the key was not found (returned as-is), use it as the fallback
         if result == key {
-            result = key
+            let mainString = Bundle.main.localizedString(forKey: key, value: nil, table: nil)
+            if mainString != key {
+                result = mainString
+            } else {
+                let readable = key
+                    .replacingOccurrences(of: "_", with: " ")
+                    .split(separator: " ")
+                    .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+                    .joined(separator: " ")
+                result = readable
+            }
         }
 
-        // Parameter interpolation: replace {param} with values
         if let params {
             for (k, v) in params {
                 result = result.replacingOccurrences(of: "{\(k)}", with: v)
@@ -110,12 +104,7 @@ final class LocalizationManager {
     }
 
     private func updateBundle() {
-        let langCode: String
-        switch resolvedLanguage {
-        case .en: langCode = "en"
-        case .zh: langCode = "zh-Hans"
-        case .system: langCode = "en"
-        }
+        let langCode = resolvedLangCode
 
         if let path = Bundle.main.path(forResource: langCode, ofType: "lproj"),
            let langBundle = Bundle(path: path) {

@@ -3,12 +3,32 @@ import Foundation
 struct ChatPollOption: Identifiable, Codable, Equatable {
     var id: String
     var text: String
-    var votes: [String]
+    var voterIds: Set<String>
 
-    init(id: String = UUID().uuidString, text: String, votes: [String] = []) {
+    init(id: String = UUID().uuidString, text: String, voterIds: Set<String> = []) {
         self.id = id
         self.text = text
-        self.votes = votes
+        self.voterIds = voterIds
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, text
+        case voterIds = "votes"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        text = try container.decode(String.self, forKey: .text)
+        let votesArray = (try? container.decode([String].self, forKey: .voterIds)) ?? []
+        voterIds = Set(votesArray)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(text, forKey: .text)
+        try container.encode(Array(voterIds), forKey: .voterIds)
     }
 }
 
@@ -45,23 +65,16 @@ struct ChatPoll: Identifiable, Codable, Equatable {
         }
         return false
     }
-}
 
-struct ChatPermissions: Codable, Equatable {
-    var allowReactions: Bool
-    var allowImages: Bool
+    func hasVoted(userId: String) -> Bool {
+        options.contains { $0.voterIds.contains(userId) }
+    }
 
-    static let `default` = ChatPermissions(allowReactions: true, allowImages: false)
-}
-
-struct GroupAnnouncement: Codable, Equatable {
-    var content: String
-    var updatedAt: Date
-    var createdBy: String
-
-    init(content: String, updatedAt: Date = Date(), createdBy: String = "user-me") {
-        self.content = content
-        self.updatedAt = updatedAt
-        self.createdBy = createdBy
+    mutating func vote(userId: String, optionIndex: Int) -> Bool {
+        guard optionIndex >= 0 && optionIndex < options.count else { return false }
+        if !allowsMultipleSelection && hasVoted(userId: userId) { return false }
+        if options[optionIndex].voterIds.contains(userId) { return false }
+        options[optionIndex].voterIds.insert(userId)
+        return true
     }
 }

@@ -95,7 +95,7 @@ enum AIPipeline {
 
         // 3. Enforce minimum persona response delay
         let elapsed = Date().timeIntervalSince(requestStart)
-        let minimum = persona.minimumResponseDelay
+        let minimum = persona.generateResponseDelay()
         if elapsed < minimum {
             try await Task.sleep(nanoseconds: UInt64((minimum - elapsed) * 1_000_000_000))
         }

@@ -1,6 +1,6 @@
 import Foundation
 
-@Observable final class SocialService {
+@Observable final class SocialService: StoreReloading {
     private(set) var points: Int = 0
     private(set) var achievementRecords: [AchievementRecord] = []
     private(set) var checkInDates: [String] = []   // "yyyy-MM-dd" strings

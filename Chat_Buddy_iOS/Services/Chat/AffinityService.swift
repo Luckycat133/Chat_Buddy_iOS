@@ -2,7 +2,7 @@ import Foundation
 
 /// Tracks per-persona affinity scores (0–100), enforces a 5-minute chat cooldown,
 /// and persists scores to UserDefaults.
-@Observable final class AffinityService {
+@Observable final class AffinityService: StoreReloading {
 
     /// Current affinity scores keyed by persona ID.
     private(set) var scores: [String: Int] = [:]

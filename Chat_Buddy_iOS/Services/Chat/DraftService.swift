@@ -1,7 +1,7 @@
 import Foundation
 
 /// Persists per-session message drafts with automatic 7-day expiry
-@Observable final class DraftService {
+@Observable final class DraftService: StoreReloading {
     private var drafts: [String: DraftEntry] = [:]
     private static let key = "chat-buddy:drafts"
     private static let expiryDays = 7

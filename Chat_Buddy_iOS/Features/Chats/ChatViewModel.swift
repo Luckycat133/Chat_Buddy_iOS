@@ -243,8 +243,9 @@ extension ChatViewModel {
             } catch is CancellationError {
                 break
             } catch {
-                // Non-fatal: one persona failing doesn't block others
-                print("[GroupChat] \(persona.name) response failed: \(error)")
+                let failContent = "⚠️ \(persona.localizedName(language: LocalizationManager().uiLanguage)) \(LocalizationManager().uiLanguage.resolved == .zh ? "暂时无法回复" : "is temporarily unable to respond")"
+                let failMsg = ChatMessage(role: .assistant, content: failContent, speakingPersonaId: persona.id)
+                chatStore.appendMessage(failMsg, to: sessionId)
             }
         }
 

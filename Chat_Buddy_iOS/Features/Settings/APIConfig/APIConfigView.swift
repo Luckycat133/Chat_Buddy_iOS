@@ -47,7 +47,7 @@ struct APIConfigView: View {
                         Text(String(format: "%.1f", store.activeConfig.temperature))
                             .foregroundStyle(.secondary)
                     }
-                    Slider(value: $store.activeConfig.temperature, in: 0...2, step: 0.1)
+                    Slider(value: $store.activeConfig.temperature, in: 0.1...2, step: 0.1)
                 }
 
                 LabeledContent(localization.t("timeout")) {

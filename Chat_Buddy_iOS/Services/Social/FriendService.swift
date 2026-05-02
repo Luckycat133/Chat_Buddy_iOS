@@ -24,7 +24,7 @@ struct FriendMeta: Codable {
     static let `default` = FriendMeta(starred: false, groupId: nil, remark: nil)
 }
 
-@Observable final class FriendService {
+@Observable final class FriendService: StoreReloading {
     private static let groupsKey = "friends.groups"
     private static let metaKey = "friends.meta"
 

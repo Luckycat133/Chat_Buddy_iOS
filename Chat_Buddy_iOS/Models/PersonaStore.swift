@@ -1,10 +1,87 @@
 import SwiftUI
 
-/// Static persona data, ported from web's personas.js + taskAgents.js
 enum PersonaStore {
-        private static let customPersonasKey = "personas.custom"
+    private static let customPersonasKey = "personas.custom"
 
-    // MARK: - Social Companions (13)
+    private static var _customPersonasCache: [Persona]?
+    private static var _personaIndex: [String: Persona]?
+
+    static var customPersonas: [Persona] {
+        if let cached = _customPersonasCache { return cached }
+        let loaded: [Persona] = StorageService.shared.get(customPersonasKey, default: [])
+        _customPersonasCache = loaded
+        return loaded
+    }
+
+    static var customSocialCompanions: [Persona] {
+        customPersonas.filter { $0.agentType == .socialCompanion }
+    }
+
+    static var customTaskAgents: [Persona] {
+        customPersonas.filter { $0.agentType == .taskSpecialist }
+    }
+
+    static var allPersonas: [Persona] {
+        socialCompanions + taskAgents + customPersonas
+    }
+
+    static func persona(byId id: String) -> Persona? {
+        if let cached = _personaIndex?[id] { return cached }
+        let index = buildIndex()
+        return index[id]
+    }
+
+    static func upsertCustomPersona(_ persona: Persona) {
+        var all = customPersonas
+        if let index = all.firstIndex(where: { $0.id == persona.id }) {
+            all[index] = persona
+        } else {
+            all.append(persona)
+        }
+        StorageService.shared.set(customPersonasKey, value: all)
+        invalidateCache()
+    }
+
+    static func deleteCustomPersona(id: String) {
+        var all = customPersonas
+        all.removeAll { $0.id == id }
+        StorageService.shared.set(customPersonasKey, value: all)
+        invalidateCache()
+    }
+
+    static func invalidateCache() {
+        _customPersonasCache = nil
+        _personaIndex = nil
+    }
+
+    private static func buildIndex() -> [String: Persona] {
+        if let cached = _personaIndex { return cached }
+        let index = Dictionary(uniqueKeysWithValues: allPersonas.map { ($0.id, $0) })
+        _personaIndex = index
+        return index
+    }
+
+    static let colorMap: [String: Color] = [
+        "ai-1": .purple,
+        "ai-2": .blue,
+        "ai-3": .orange,
+        "ai-4": Color(.systemGray),
+        "ai-5": .green,
+        "ai-miku": .cyan,
+        "ai-rem": .blue,
+        "ai-rin": .red,
+        "ai-naruto": .orange,
+        "ai-l": Color(.systemGray),
+        "ai-zerotwo": .pink,
+        "ai-asuna": Color(hex: "F59E0B"),
+        "ai-gojo": .indigo,
+        "agent-coder": Color(hex: "10B981"),
+        "agent-muse": Color(hex: "8B5CF6"),
+        "agent-scholar": Color(hex: "F59E0B"),
+        "agent-sensei": Color(hex: "0EA5E9"),
+        "agent-aurora": Color(hex: "F43F5E"),
+        "agent-pixel": Color(hex: "D946EF"),
+    ]
 
     static let socialCompanions: [Persona] = [
         Persona(id: "ai-1", name: "Luna", nameZh: "露娜", avatar: "avatar_luna", birthday: "01-23",
@@ -37,7 +114,6 @@ enum PersonaStore {
                 style: "High energy! Uses exclamation marks!!", styleZh: "活力四射！喜欢用感叹号！！",
                 agentType: .socialCompanion, category: nil),
 
-        // Anime Characters
         Persona(id: "ai-miku", name: "Hatsune Miku", nameZh: "初音未来", avatar: "avatar_miku", birthday: "08-31",
                 personality: "Cheerful, energetic, music-loving virtual idol", personalityZh: "开朗活泼，热爱音乐的虚拟偶像",
                 interests: ["Singing", "Dancing", "Concerts", "Leeks"], interestsZh: ["唱歌", "跳舞", "演唱会", "大葱"],
@@ -87,8 +163,6 @@ enum PersonaStore {
                 agentType: .socialCompanion, category: nil),
     ]
 
-    // MARK: - Task Specialists (6)
-
     static let taskAgents: [Persona] = [
         Persona(id: "agent-coder", name: "Coder", nameZh: "代码", avatar: "default_cyberpunk", birthday: nil,
                 personality: "Logical, patient, detail-oriented programmer", personalityZh: "逻辑严谨，耐心细致的程序员",
@@ -125,73 +199,5 @@ enum PersonaStore {
                 interests: ["Design", "Art", "UI/UX"], interestsZh: ["设计", "艺术", "UI/UX"],
                 style: "Uses visual metaphors, suggests creative approaches.", styleZh: "使用视觉隐喻，提供创意方案。",
                 agentType: .taskSpecialist, category: .creative),
-    ]
-
-    // MARK: - Combined
-
-        static var customPersonas: [Persona] {
-                StorageService.shared.get(customPersonasKey, default: [])
-        }
-
-        static var customSocialCompanions: [Persona] {
-                customPersonas.filter { $0.agentType == .socialCompanion }
-        }
-
-        static var customTaskAgents: [Persona] {
-                customPersonas.filter { $0.agentType == .taskSpecialist }
-        }
-
-        static var allPersonas: [Persona] {
-                socialCompanions + taskAgents + customPersonas
-        }
-
-    static func persona(byId id: String) -> Persona? {
-        allPersonas.first { $0.id == id }
-    }
-
-        static func addCustomPersona(_ persona: Persona) {
-                var all = customPersonas
-                all.append(persona)
-                StorageService.shared.set(customPersonasKey, value: all)
-        }
-
-        static func upsertCustomPersona(_ persona: Persona) {
-                var all = customPersonas
-                if let index = all.firstIndex(where: { $0.id == persona.id }) {
-                        all[index] = persona
-                } else {
-                        all.append(persona)
-                }
-                StorageService.shared.set(customPersonasKey, value: all)
-        }
-
-        static func deleteCustomPersona(id: String) {
-                var all = customPersonas
-                all.removeAll { $0.id == id }
-                StorageService.shared.set(customPersonasKey, value: all)
-        }
-
-    // MARK: - Color Map
-
-    static let colorMap: [String: Color] = [
-        "ai-1": .purple,
-        "ai-2": .blue,
-        "ai-3": .orange,
-        "ai-4": Color(.systemGray),
-        "ai-5": .green,
-        "ai-miku": .cyan,
-        "ai-rem": .blue,
-        "ai-rin": .red,
-        "ai-naruto": .orange,
-        "ai-l": Color(.systemGray),
-        "ai-zerotwo": .pink,
-        "ai-asuna": Color(hex: "F59E0B"),
-        "ai-gojo": .indigo,
-        "agent-coder": Color(hex: "10B981"),
-        "agent-muse": Color(hex: "8B5CF6"),
-        "agent-scholar": Color(hex: "F59E0B"),
-        "agent-sensei": Color(hex: "0EA5E9"),
-        "agent-aurora": Color(hex: "F43F5E"),
-        "agent-pixel": Color(hex: "D946EF"),
     ]
 }

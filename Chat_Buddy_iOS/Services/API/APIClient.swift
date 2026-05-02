@@ -1,12 +1,16 @@
 import Foundation
+import os.log
 
-/// Thread-safe HTTP client with retry logic, mirroring web's APIClient.js
 actor APIClient {
     private let session: URLSession
     private var baseURL: String
     private var authToken: String?
     private var timeout: TimeInterval
     private var maxRetries: Int
+
+    private static let maxRetryDelay: TimeInterval = 10.0
+    private static let encoder = JSONEncoder()
+    private static let logger = Logger(subsystem: "com.chatbuddy", category: "APIClient")
 
     init(config: APIConfig) {
         let sessionConfig = URLSessionConfiguration.default
@@ -25,18 +29,14 @@ actor APIClient {
         self.maxRetries = config.maxRetries
     }
 
-    // MARK: - HTTP Methods
-
     func get(_ endpoint: String) async throws -> Data {
         try await request(endpoint, method: "GET")
     }
 
     func post(_ endpoint: String, body: some Encodable) async throws -> Data {
-        let data = try JSONEncoder().encode(body)
+        let data = try Self.encoder.encode(body)
         return try await request(endpoint, method: "POST", body: data)
     }
-
-    // MARK: - Core Request
 
     private func request(
         _ endpoint: String,
@@ -55,10 +55,10 @@ actor APIClient {
 
         request.httpBody = body
 
-        return try await fetchWithRetry(request, retriesLeft: retries ?? maxRetries)
+        return try await fetchWithRetry(request, retriesLeft: retries ?? maxRetries, attempt: 0)
     }
 
-    private func fetchWithRetry(_ request: URLRequest, retriesLeft: Int) async throws -> Data {
+    private func fetchWithRetry(_ request: URLRequest, retriesLeft: Int, attempt: Int) async throws -> Data {
         do {
             let (data, response) = try await session.data(for: request)
 
@@ -66,17 +66,21 @@ actor APIClient {
                 throw APIError.invalidResponse
             }
 
-            // Rate limiting - retry with backoff
             if httpResponse.statusCode == 429 && retriesLeft > 0 {
-                let waitTime = Double(maxRetries - retriesLeft + 1) + Double.random(in: 0...0.5)
+                let waitTime = min(
+                    Double(maxRetries - retriesLeft + 1) + Double.random(in: 0...0.5),
+                    Self.maxRetryDelay
+                )
+                Self.logger.info("Rate limited (429), retrying in \(waitTime)s...")
                 try await Task.sleep(for: .seconds(waitTime))
-                return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1)
+                return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
 
-            // Server errors - retry
             if httpResponse.statusCode >= 500 && retriesLeft > 0 {
-                try await Task.sleep(for: .seconds(1))
-                return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1)
+                let waitTime = min(1.0 * Double(maxRetries - retriesLeft + 1), Self.maxRetryDelay)
+                Self.logger.info("Server error (\(httpResponse.statusCode)), retrying in \(waitTime)s...")
+                try await Task.sleep(for: .seconds(waitTime))
+                return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
 
             guard (200...299).contains(httpResponse.statusCode) else {
@@ -90,15 +94,18 @@ actor APIClient {
             throw error
         } catch {
             if retriesLeft > 0 && !(error is CancellationError) {
-                try await Task.sleep(for: .seconds(1))
-                return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1)
+                let waitTime = Double(attempt + 1)
+                Self.logger.info("Network error, retrying in \(waitTime)s...")
+                try await Task.sleep(for: .seconds(waitTime))
+                return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
             throw APIError.networkError(error)
         }
     }
 
     private func buildURL(_ endpoint: String) throws -> URL {
-        if endpoint.hasPrefix("http"), let url = URL(string: endpoint) {
+        if (endpoint.hasPrefix("http://") || endpoint.hasPrefix("https://")),
+           let url = URL(string: endpoint) {
             return url
         }
         guard let url = URL(string: "\(baseURL)\(endpoint)") else {
@@ -108,14 +115,13 @@ actor APIClient {
     }
 }
 
-// MARK: - Error Types
-
 enum APIError: LocalizedError {
     case invalidURL(String)
     case invalidResponse
     case httpError(statusCode: Int, body: String)
     case networkError(Error)
     case decodingError(Error)
+    case validationError(String)
 
     var errorDescription: String? {
         switch self {
@@ -129,6 +135,8 @@ enum APIError: LocalizedError {
             return "Network error: \(error.localizedDescription)"
         case .decodingError(let error):
             return "Decoding error: \(error.localizedDescription)"
+        case .validationError(let message):
+            return message
         }
     }
 }

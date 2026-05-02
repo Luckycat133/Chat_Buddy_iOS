@@ -4,7 +4,7 @@ private let kChatSessions = "chatSessions"
 
 /// Observable store managing all chat sessions, persisted via StorageService.
 /// Supports both 1v1 sessions and multi-persona group sessions.
-@Observable final class ChatStore {
+@Observable final class ChatStore: StoreReloading {
     private(set) var sessions: [ChatSession] = []
 
     init() {
@@ -223,16 +223,16 @@ private let kChatSessions = "chatSessions"
         let poll = sessions[sIdx].polls[pIdx]
 
         if poll.allowsMultipleSelection {
-            if sessions[sIdx].polls[pIdx].options[oIdx].votes.contains(userId) {
-                sessions[sIdx].polls[pIdx].options[oIdx].votes.removeAll { $0 == userId }
+            if sessions[sIdx].polls[pIdx].options[oIdx].voterIds.contains(userId) {
+                sessions[sIdx].polls[pIdx].options[oIdx].voterIds.remove(userId)
             } else {
-                sessions[sIdx].polls[pIdx].options[oIdx].votes.append(userId)
+                sessions[sIdx].polls[pIdx].options[oIdx].voterIds.insert(userId)
             }
         } else {
             for index in sessions[sIdx].polls[pIdx].options.indices {
-                sessions[sIdx].polls[pIdx].options[index].votes.removeAll { $0 == userId }
+                sessions[sIdx].polls[pIdx].options[index].voterIds.remove(userId)
             }
-            sessions[sIdx].polls[pIdx].options[oIdx].votes.append(userId)
+            sessions[sIdx].polls[pIdx].options[oIdx].voterIds.insert(userId)
         }
 
         sessions[sIdx].updatedAt = Date()
@@ -250,7 +250,7 @@ private let kChatSessions = "chatSessions"
         for targetId in uniqueTargets {
             let forwarded = ChatMessage(
                 role: .user,
-                content: "[FORWARDED:\(message.id):\(sourceSessionId)]\n\(message.content)"
+                content: "[FORWARDED]\n\(message.content)"
             )
             appendMessage(forwarded, to: targetId)
         }
@@ -284,7 +284,7 @@ private let kChatSessions = "chatSessions"
     // MARK: - Persistence
 
     private func save() {
-        StorageService.shared.set(kChatSessions, value: sessions)
+        StorageService.shared.setAsync(kChatSessions, value: sessions)
     }
 
     /// Stable-sort: pinned sessions first (preserving relative updatedAt order within group).
