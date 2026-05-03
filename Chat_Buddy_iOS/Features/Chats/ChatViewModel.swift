@@ -200,52 +200,65 @@ extension ChatViewModel {
 
         let config = apiConfigStore.activeConfig
 
-        for (index, persona) in responders.enumerated() {
-            guard !Task.isCancelled else { break }
+        await withTaskGroup(of: (personaId: String, messages: [(content: String, speakingPersonaId: String)]).self) { group in
+            for (index, persona) in responders.enumerated() {
+                guard !Task.isCancelled else { break }
 
-            // Brief inter-persona pause for naturalness
-            if index > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 0.8...2.0) * 1_000_000_000))
-            }
 
-            guard let currentSession = chatStore.session(id: sessionId) else { break }
-            let intimacyLevel = affinityService.level(for: persona.id).rawValue
-
-            do {
-                let result = try await AIPipeline.run(
-                    session: currentSession,
-                    persona: persona,
-                    config: config,
-                    aiLanguageCode: aiLanguageCode,
-                    intimacyLevel: intimacyLevel,
-                    memoryService: memoryService,
-                    toolExecutor: toolExecutor
-                )
-
-                for extracted in result.newMemories {
-                    memoryService?.addMemory(
-                        personaId: persona.id, fact: extracted.fact,
-                        category: extracted.category, importance: extracted.importance
-                    )
+                if index > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 0.8...2.0) * 1_000_000_000))
                 }
 
-                if !result.wasSilent {
-                    for (msgIndex, content) in result.messages.enumerated() {
-                        if msgIndex > 0 {
-                            try? await Task.sleep(nanoseconds: 800_000_000)
+                guard let currentSession = chatStore.session(id: sessionId) else { break }
+                let intimacyLevel = affinityService.level(for: persona.id).rawValue
+
+                group.addTask {
+                    do {
+                        let result = try await AIPipeline.run(
+                            session: currentSession,
+                            persona: persona,
+                            config: config,
+                            aiLanguageCode: aiLanguageCode,
+                            intimacyLevel: intimacyLevel,
+                            memoryService: memoryService,
+                            toolExecutor: toolExecutor
+                        )
+
+                        for extracted in result.newMemories {
+                            memoryService?.addMemory(
+                                personaId: persona.id, fact: extracted.fact,
+                                category: extracted.category, importance: extracted.importance
+                            )
                         }
-                        // Tag message with which persona is speaking
-                        var msg = ChatMessage(role: .assistant, content: content)
-                        msg.speakingPersonaId = persona.id
-                        chatStore.appendMessage(msg, to: sessionId)
+
+
+                        return (persona.id, result.messages.map { ($0, persona.id) })
+                    } catch is CancellationError {
+                        return (persona.id, [])
+                    } catch {
+                        let failContent = "⚠️ \(persona.localizedName(language: LocalizationManager().uiLanguage)) \(LocalizationManager().uiLanguage.resolved == .zh ? "暂时无法回复" : "is temporarily unable to respond")"
+                        return (persona.id, [(failContent, persona.id)])
                     }
                 }
-            } catch is CancellationError {
-                break
-            } catch {
-                let failContent = "⚠️ \(persona.localizedName(language: LocalizationManager().uiLanguage)) \(LocalizationManager().uiLanguage.resolved == .zh ? "暂时无法回复" : "is temporarily unable to respond")"
-                let failMsg = ChatMessage(role: .assistant, content: failContent, speakingPersonaId: persona.id)
-                chatStore.appendMessage(failMsg, to: sessionId)
+            }
+
+            var allResponses: [(personaId: String, messages: [(content: String, speakingPersonaId: String)])] = []
+            for await response in group {
+                allResponses.append(response)
+            }
+
+            // Sort by original responder order to match `responders` sequence
+            let responderOrder = Dictionary(uniqueKeysWithValues: responders.enumerated().map { ($1.id, $0) })
+            allResponses.sort { (responderOrder[$0.personaId] ?? 0) < (responderOrder[$1.personaId] ?? 0) }
+
+            for response in allResponses {
+                for (msgIndex, (content, speakingPersonaId)) in response.messages.enumerated() {
+                    if msgIndex > 0 {
+                        try? await Task.sleep(nanoseconds: 800_000_000)
+                    }
+                    let msg = ChatMessage(role: .assistant, content: content, speakingPersonaId: speakingPersonaId)
+                    chatStore.appendMessage(msg, to: sessionId)
+                }
             }
         }
 

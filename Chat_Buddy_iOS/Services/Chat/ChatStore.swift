@@ -4,7 +4,7 @@ private let kChatSessions = "chatSessions"
 
 /// Observable store managing all chat sessions, persisted via StorageService.
 /// Supports both 1v1 sessions and multi-persona group sessions.
-@Observable final class ChatStore: StoreReloading {
+@MainActor @Observable final class ChatStore: StoreReloading {
     private(set) var sessions: [ChatSession] = []
 
     init() {
