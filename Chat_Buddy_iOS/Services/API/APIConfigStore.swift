@@ -28,7 +28,9 @@ final class APIConfigStore {
     }
 
     func loadProfile(_ profile: APIProfile) {
-        activeConfig = profile.config
+        var config = profile.config
+        config.apiKey = KeychainService.get(Self.profileKeyKey(profile.id)) ?? ""
+        activeConfig = config
     }
 
     func deleteProfile(_ profile: APIProfile) {

@@ -23,11 +23,35 @@ struct ExportImportView: View {
     @State private var exportDocument: BackupDocument?
     @State private var alertMessage: String?
     @State private var showAlert = false
+    @State private var includeSensitiveData = false
+    @State private var showSensitiveDataWarning = false
 
     var body: some View {
         Form {
             // Export
             Section {
+                Toggle(isOn: $includeSensitiveData) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(localization.t("export_include_sensitive"))
+                        Text(localization.t("export_include_sensitive_desc"))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .onChange(of: includeSensitiveData) { _, newValue in
+                    if newValue {
+                        showSensitiveDataWarning = true
+                    }
+                }
+                .alert(localization.t("warning"), isPresented: $showSensitiveDataWarning) {
+                    Button(localization.t("cancel"), role: .cancel) {
+                        includeSensitiveData = false
+                    }
+                    Button(localization.t("confirm")) {}
+                } message: {
+                    Text(localization.t("export_sensitive_warning"))
+                }
+                
                 Button {
                     exportData()
                 } label: {
@@ -98,7 +122,7 @@ struct ExportImportView: View {
 
     private func exportData() {
         do {
-            let data = try DataExporter.exportToData(configStore: configStore)
+            let data = try DataExporter.exportToData(configStore: configStore, includeSensitiveData: includeSensitiveData)
             exportDocument = BackupDocument(data: data)
             showExporter = true
         } catch {

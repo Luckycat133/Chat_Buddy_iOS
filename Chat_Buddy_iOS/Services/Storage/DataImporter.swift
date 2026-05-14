@@ -58,11 +58,21 @@ struct DataImporter {
 
         if let config = backup.apiConfig {
             configStore.activeConfig = config
+            // 如果备份中包含 API 密钥，也保存到 Keychain
+            if !config.apiKey.isEmpty {
+                KeychainService.set(APIConfigStore.activeKeyKey, value: config.apiKey)
+            }
             count += 1
         }
 
         if let profiles = backup.apiProfiles {
             configStore.profiles = profiles
+            // 如果备份中包含 API 密钥，也保存到 Keychain
+            for profile in profiles {
+                if !profile.config.apiKey.isEmpty {
+                    KeychainService.set(APIConfigStore.profileKeyKey(profile.id), value: profile.config.apiKey)
+                }
+            }
             count += profiles.count
         }
 

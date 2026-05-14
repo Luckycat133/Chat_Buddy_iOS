@@ -13,4 +13,10 @@ struct APIProfile: Codable, Identifiable, Equatable {
         self.config = config
         self.createdAt = Date()
     }
+    
+    var withoutApiKey: APIProfile {
+        var copy = self
+        copy.config = copy.config.withoutApiKey
+        return copy
+    }
 }

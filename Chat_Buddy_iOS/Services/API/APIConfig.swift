@@ -30,4 +30,10 @@ struct APIConfig: Codable, Equatable {
         guard maxRetries >= 0 else { return false }
         return true
     }
+    
+    var withoutApiKey: APIConfig {
+        var copy = self
+        copy.apiKey = ""
+        return copy
+    }
 }

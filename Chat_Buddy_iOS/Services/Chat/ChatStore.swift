@@ -1,6 +1,25 @@
 import SwiftUI
+import os.log
 
 private let kChatSessions = "chatSessions"
+private let logger = Logger(subsystem: "com.chatbuddy", category: "ChatStore")
+
+enum ChatStoreError: LocalizedError {
+    case sessionNotFound(String)
+    case invalidInput(String)
+    case messageNotFound(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .sessionNotFound(let id):
+            return "Session not found: \(id)"
+        case .invalidInput(let message):
+            return "Invalid input: \(message)"
+        case .messageNotFound(let id):
+            return "Message not found: \(id)"
+        }
+    }
+}
 
 /// Observable store managing all chat sessions, persisted via StorageService.
 /// Supports both 1v1 sessions and multi-persona group sessions.
@@ -46,7 +65,10 @@ private let kChatSessions = "chatSessions"
 
     /// Updates group display name for an existing session.
     func updateGroupName(id: String, name: String?) {
-        guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        guard let idx = sessionIndex(for: id) else {
+            logError("Failed to update group name: Session \(id) not found")
+            return
+        }
         sessions[idx].groupName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         sessions[idx].updatedAt = Date()
         save()
@@ -54,7 +76,10 @@ private let kChatSessions = "chatSessions"
 
     /// Updates session-level announcement for group chats.
     func updateAnnouncement(sessionId: String, announcement: GroupAnnouncement?) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to update announcement: Session \(sessionId) not found")
+            return
+        }
         sessions[idx].announcement = announcement
         sessions[idx].updatedAt = Date()
         save()
@@ -62,7 +87,10 @@ private let kChatSessions = "chatSessions"
 
     /// Updates group chat feature permissions.
     func updatePermissions(sessionId: String, permissions: ChatPermissions) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to update permissions: Session \(sessionId) not found")
+            return
+        }
         sessions[idx].permissions = permissions
         sessions[idx].updatedAt = Date()
         save()
@@ -70,7 +98,10 @@ private let kChatSessions = "chatSessions"
 
     /// Updates mute flag for a session.
     func updateMuted(sessionId: String, isMuted: Bool) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to update mute state: Session \(sessionId) not found")
+            return
+        }
         sessions[idx].isMuted = isMuted
         sessions[idx].updatedAt = Date()
         save()
@@ -78,7 +109,10 @@ private let kChatSessions = "chatSessions"
 
     /// Updates admin-only chat mode for a group session.
     func updateAdminOnly(sessionId: String, adminOnly: Bool) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to update admin-only mode: Session \(sessionId) not found")
+            return
+        }
         sessions[idx].adminOnly = adminOnly
         sessions[idx].updatedAt = Date()
         save()
@@ -86,7 +120,10 @@ private let kChatSessions = "chatSessions"
 
     /// Updates a display nickname for a participant in a session.
     func updateNickname(sessionId: String, participantId: String, nickname: String?) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to update nickname: Session \(sessionId) not found")
+            return
+        }
         if let trimmed = nickname?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
             sessions[idx].nicknames[participantId] = trimmed
         } else {
@@ -98,7 +135,10 @@ private let kChatSessions = "chatSessions"
 
     /// Adds one or more members into an existing group session.
     func addMembers(sessionId: String, personaIds: [String]) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to add members: Session \(sessionId) not found")
+            return
+        }
         let merged = Set(sessions[idx].personaIds).union(personaIds)
         sessions[idx].personaIds = Array(merged)
         sessions[idx].updatedAt = Date()
@@ -132,10 +172,24 @@ private let kChatSessions = "chatSessions"
     func session(id: String) -> ChatSession? {
         sessions.first { $0.id == id }
     }
+    
+    // MARK: - Helpers
+    
+    private func sessionIndex(for id: String) -> Int? {
+        sessions.firstIndex(where: { $0.id == id })
+    }
+    
+    private func logError(_ message: String) {
+        logger.error("\(message)")
+    }
 
     // MARK: - Deletion
 
     func deleteSession(_ session: ChatSession) {
+        guard sessions.contains(where: { $0.id == session.id }) else {
+            logError("Failed to delete session: Session \(session.id) not found")
+            return
+        }
         sessions.removeAll { $0.id == session.id }
         save()
     }
@@ -143,7 +197,10 @@ private let kChatSessions = "chatSessions"
     // MARK: - Message Operations
 
     func appendMessage(_ message: ChatMessage, to sessionId: String) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to append message: Session \(sessionId) not found")
+            return
+        }
         sessions[idx].messages.append(message)
         sessions[idx].updatedAt = Date()
         // Bubble to top of the appropriate group
@@ -159,7 +216,10 @@ private let kChatSessions = "chatSessions"
 
     /// Clears all conversation messages (preserves system prompts).
     func clearMessages(in sessionId: String) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to clear messages: Session \(sessionId) not found")
+            return
+        }
         sessions[idx].messages.removeAll { $0.role != .system }
         sessions[idx].updatedAt = Date()
         save()
@@ -167,7 +227,15 @@ private let kChatSessions = "chatSessions"
 
     /// Deletes a single message by id within a session.
     func deleteMessage(id: String, in sessionId: String) {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to delete message: Session \(sessionId) not found")
+            return
+        }
+        let messageExists = sessions[idx].messages.contains { $0.id == id }
+        guard messageExists else {
+            logError("Failed to delete message: Message \(id) not found in session \(sessionId)")
+            return
+        }
         sessions[idx].messages.removeAll { $0.id == id }
         sessions[idx].updatedAt = Date()
         save()
@@ -185,13 +253,19 @@ private let kChatSessions = "chatSessions"
         isAnonymous: Bool = false,
         expiresInHours: Int? = nil
     ) -> ChatPoll? {
-        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return nil }
+        guard let idx = sessionIndex(for: sessionId) else {
+            logError("Failed to create poll: Session \(sessionId) not found")
+            return nil
+        }
         let cleanedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedOptions = options
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .prefix(10)
-        guard !cleanedQuestion.isEmpty, cleanedOptions.count >= 2 else { return nil }
+        guard !cleanedQuestion.isEmpty, cleanedOptions.count >= 2 else {
+            logError("Failed to create poll: Invalid input (empty question or too few options)")
+            return nil
+        }
 
         let poll = ChatPoll(
             question: cleanedQuestion,
@@ -215,10 +289,22 @@ private let kChatSessions = "chatSessions"
         optionId: String,
         userId: String = "user-me"
     ) -> Bool {
-        guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }) else { return false }
-        guard let pIdx = sessions[sIdx].polls.firstIndex(where: { $0.id == pollId }) else { return false }
-        guard !sessions[sIdx].polls[pIdx].isExpired else { return false }
-        guard let oIdx = sessions[sIdx].polls[pIdx].options.firstIndex(where: { $0.id == optionId }) else { return false }
+        guard let sIdx = sessionIndex(for: sessionId) else {
+            logError("Failed to vote: Session \(sessionId) not found")
+            return false
+        }
+        guard let pIdx = sessions[sIdx].polls.firstIndex(where: { $0.id == pollId }) else {
+            logError("Failed to vote: Poll \(pollId) not found in session \(sessionId)")
+            return false
+        }
+        guard !sessions[sIdx].polls[pIdx].isExpired else {
+            logError("Failed to vote: Poll \(pollId) has expired")
+            return false
+        }
+        guard let oIdx = sessions[sIdx].polls[pIdx].options.firstIndex(where: { $0.id == optionId }) else {
+            logError("Failed to vote: Option \(optionId) not found in poll \(pollId)")
+            return false
+        }
 
         let poll = sessions[sIdx].polls[pIdx]
 
@@ -245,7 +331,10 @@ private let kChatSessions = "chatSessions"
     /// Forwards a message to one or more target sessions as a user-authored message.
     func forwardMessage(_ message: ChatMessage, to targetSessionIds: [String], sourceSessionId: String) {
         let uniqueTargets = Set(targetSessionIds.filter { $0 != sourceSessionId })
-        guard !uniqueTargets.isEmpty else { return }
+        guard !uniqueTargets.isEmpty else {
+            logError("No valid target sessions for forwarding")
+            return
+        }
 
         for targetId in uniqueTargets {
             let forwarded = ChatMessage(
@@ -259,14 +348,20 @@ private let kChatSessions = "chatSessions"
     // MARK: - Pin / Unpin
 
     func pinSession(id: String) {
-        guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        guard let idx = sessionIndex(for: id) else {
+            logError("Failed to pin: Session \(id) not found")
+            return
+        }
         sessions[idx].isPinned = true
         stableSort()
         save()
     }
 
     func unpinSession(id: String) {
-        guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        guard let idx = sessionIndex(for: id) else {
+            logError("Failed to unpin: Session \(id) not found")
+            return
+        }
         sessions[idx].isPinned = false
         stableSort()
         save()

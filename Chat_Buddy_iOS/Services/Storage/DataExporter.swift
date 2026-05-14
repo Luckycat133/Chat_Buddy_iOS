@@ -16,20 +16,31 @@ struct AppBackup: Codable {
 struct DataExporter {
     private static let logger = Logger(subsystem: "com.chatbuddy", category: "DataExporter")
 
-    static func exportAll(configStore: APIConfigStore) -> AppBackup {
-        AppBackup(
+    static func exportAll(configStore: APIConfigStore, includeSensitiveData: Bool = false) -> AppBackup {
+        var sanitizedConfig: APIConfig?
+        var sanitizedProfiles: [APIProfile]?
+        
+        if includeSensitiveData {
+            sanitizedConfig = configStore.activeConfig
+            sanitizedProfiles = configStore.profiles
+        } else {
+            sanitizedConfig = configStore.activeConfig.withoutApiKey
+            sanitizedProfiles = configStore.profiles.map { $0.withoutApiKey }
+        }
+        
+        return AppBackup(
             version: AppConstants.appVersion,
             exportDate: Date(),
-            storageData: StorageService.shared.exportAll(),
+            storageData: StorageService.shared.exportAll().filter { !$0.key.contains("apiConfig") && !$0.key.contains("apiProfiles") },
             momentsImages: exportMomentsImages(),
-            apiConfig: configStore.activeConfig,
-            apiProfiles: configStore.profiles,
+            apiConfig: sanitizedConfig,
+            apiProfiles: sanitizedProfiles,
             settings: exportSettings()
         )
     }
 
-    static func exportToData(configStore: APIConfigStore) throws -> Data {
-        let backup = exportAll(configStore: configStore)
+    static func exportToData(configStore: APIConfigStore, includeSensitiveData: Bool = false) throws -> Data {
+        let backup = exportAll(configStore: configStore, includeSensitiveData: includeSensitiveData)
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         encoder.dateEncodingStrategy = .iso8601
