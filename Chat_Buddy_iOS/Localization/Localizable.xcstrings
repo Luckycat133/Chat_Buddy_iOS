@@ -3665,6 +3665,57 @@
         }
       }
     },
+    "error_api_not_configured": {
+      "extractionState": "new",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "API not configured — please go to Settings → API."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "API 未配置 — 请前往设置 → API 进行配置。"
+          }
+        }
+      }
+    },
+    "error_session_not_found": {
+      "extractionState": "new",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Session not found."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "会话未找到。"
+          }
+        }
+      }
+    },
+    "error_persona_unavailable": {
+      "extractionState": "new",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "is temporarily unable to respond"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "new",
+            "value": "暂时无法回复"
+          }
+        }
+      }
+    },
     "Uses pure black backgrounds in dark mode to save battery on OLED screens.": {},
     "version": {
       "extractionState": "manual",

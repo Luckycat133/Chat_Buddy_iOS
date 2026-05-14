@@ -23,8 +23,8 @@ struct APIConfig: Codable, Equatable {
 
     var isValid: Bool {
         guard !baseURL.isEmpty, !apiKey.isEmpty, !model.isEmpty else { return false }
+        guard baseURL.hasPrefix("https://") else { return false }
         guard URL(string: baseURL) != nil else { return false }
-        guard baseURL.hasPrefix("http://") || baseURL.hasPrefix("https://") else { return false }
         guard (0.1...2).contains(temperature) else { return false }
         guard timeout > 0 else { return false }
         guard maxRetries >= 0 else { return false }

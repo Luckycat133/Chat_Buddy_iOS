@@ -22,7 +22,7 @@ struct MessageBubble: View {
     private var isBookmarked: Bool { bookmarkService.isBookmarked(message.id) }
     private var isZh: Bool { localization.uiLanguage.resolved == .zh }
 
-    private enum ParsedType {
+    private enum ParsedType: Equatable {
         case plain
         case forwarded(String)
         case redPacket(amount: String, blessing: String)
@@ -30,7 +30,16 @@ struct MessageBubble: View {
         case poll(ChatPoll)
     }
 
-    private var parsedType: ParsedType {
+    @State private var cachedParsedType: ParsedType? = nil
+    private var computedParsedType: ParsedType {
+        if let cached = cachedParsedType { return cached }
+
+        let parsed = computeParsedType()
+        cachedParsedType = parsed
+        return parsed
+    }
+
+    private func computeParsedType() -> ParsedType {
         if message.content.hasPrefix("[FORWARDED]"), let body = forwardedBody(from: message.content) {
             return .forwarded(body)
         }
@@ -255,7 +264,7 @@ struct MessageBubble: View {
 
     @ViewBuilder
     private func messageContentView(isUserBubble: Bool) -> some View {
-        switch parsedType {
+        switch computedParsedType {
         case .plain:
             VStack(alignment: isUserBubble ? .trailing : .leading, spacing: DSSpacing.xs) {
                 // Rich content: markdown + code blocks

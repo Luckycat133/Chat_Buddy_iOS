@@ -15,6 +15,7 @@ actor APIClient {
     init(config: APIConfig) {
         let sessionConfig = URLSessionConfiguration.default
         sessionConfig.timeoutIntervalForRequest = config.timeout
+        sessionConfig.waitsForConnectivity = false
         self.session = URLSession(configuration: sessionConfig)
         self.baseURL = config.baseURL
         self.authToken = config.apiKey.isEmpty ? nil : config.apiKey
@@ -27,6 +28,10 @@ actor APIClient {
         self.authToken = config.apiKey.isEmpty ? nil : config.apiKey
         self.timeout = config.timeout
         self.maxRetries = config.maxRetries
+    }
+
+    func clearSensitiveData() {
+        self.authToken = nil
     }
 
     func get(_ endpoint: String) async throws -> Data {
@@ -48,6 +53,7 @@ actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("nosniff", forHTTPHeaderField: "X-Content-Type-Options")
 
         if let token = authToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -71,14 +77,14 @@ actor APIClient {
                     Double(maxRetries - retriesLeft + 1) + Double.random(in: 0...0.5),
                     Self.maxRetryDelay
                 )
-                Self.logger.info("Rate limited (429), retrying in \(waitTime)s...")
+                Self.logger.info("Rate limited (429), retrying in \(waitTime, format: .seconds(style: .floatingPoint))s...")
                 try await Task.sleep(for: .seconds(waitTime))
                 return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
 
             if httpResponse.statusCode >= 500 && retriesLeft > 0 {
                 let waitTime = min(1.0 * Double(maxRetries - retriesLeft + 1), Self.maxRetryDelay)
-                Self.logger.info("Server error (\(httpResponse.statusCode)), retrying in \(waitTime)s...")
+                Self.logger.info("Server error (\(httpResponse.statusCode)), retrying in \(waitTime, format: .seconds(style: .floatingPoint))s...")
                 try await Task.sleep(for: .seconds(waitTime))
                 return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
@@ -95,7 +101,7 @@ actor APIClient {
         } catch {
             if retriesLeft > 0 && !(error is CancellationError) {
                 let waitTime = Double(attempt + 1)
-                Self.logger.info("Network error, retrying in \(waitTime)s...")
+                Self.logger.info("Network error, retrying in \(waitTime, format: .seconds(style: .floatingPoint))s...")
                 try await Task.sleep(for: .seconds(waitTime))
                 return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
@@ -104,14 +110,59 @@ actor APIClient {
     }
 
     private func buildURL(_ endpoint: String) throws -> URL {
-        if (endpoint.hasPrefix("http://") || endpoint.hasPrefix("https://")),
-           let url = URL(string: endpoint) {
+        if endpoint.hasPrefix("http://") {
+            Self.logger.warning("HTTP connection rejected for security: [REDACTED_ENDPOINT]")
+            throw APIError.validationError("HTTP connections are not allowed. Only HTTPS is permitted.")
+        }
+
+        if endpoint.hasPrefix("https://") {
+            guard let url = URL(string: endpoint) else {
+                throw APIError.invalidURL(endpoint)
+            }
+
+            guard validateURL(url) else {
+                throw APIError.validationError("Invalid or suspicious URL rejected")
+            }
+
             return url
         }
+
+        guard baseURL.hasPrefix("https://") else {
+            Self.logger.error("Base URL must use HTTPS")
+            throw APIError.validationError("Base URL must use HTTPS. HTTP is not allowed.")
+        }
+
         guard let url = URL(string: "\(baseURL)\(endpoint)") else {
             throw APIError.invalidURL(endpoint)
         }
+
+        guard validateURL(url) else {
+            throw APIError.validationError("Invalid or suspicious URL rejected")
+        }
+
         return url
+    }
+
+    private func validateURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https" else {
+            return false
+        }
+
+        guard let host = url.host, !host.isEmpty else {
+            return false
+        }
+
+        if host.contains("@") || host.contains("#") || host.contains("$") {
+            Self.logger.warning("Suspicious URL pattern detected")
+            return false
+        }
+
+        if host == "localhost" || host == "127.0.0.1" || host.hasPrefix("192.168.") || host.hasPrefix("10.") || host.hasPrefix("172.16.") {
+            Self.logger.warning("Private network URL rejected for security")
+            return false
+        }
+
+        return true
     }
 }
 

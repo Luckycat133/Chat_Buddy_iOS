@@ -26,6 +26,10 @@ enum ChatStoreError: LocalizedError {
 @MainActor @Observable final class ChatStore: StoreReloading {
     private(set) var sessions: [ChatSession] = []
 
+    private var pendingSaveTask: Task<Void, Never>?
+    private var isSaveScheduled = false
+    private static let saveThrottleInterval: TimeInterval = 0.5
+
     init() {
         sessions = StorageService.shared.get(kChatSessions, default: [])
     }
@@ -44,7 +48,7 @@ enum ChatStoreError: LocalizedError {
         let newSession = ChatSession(personaId: personaId)
         let insertIdx = sessions.firstIndex(where: { !$0.isPinned }) ?? sessions.count
         sessions.insert(newSession, at: insertIdx)
-        save()
+        scheduleSave()
         return newSession
     }
 
@@ -59,7 +63,7 @@ enum ChatStoreError: LocalizedError {
         let newSession = ChatSession(personaIds: personaIds, groupName: groupName)
         let insertIdx = sessions.firstIndex(where: { !$0.isPinned }) ?? sessions.count
         sessions.insert(newSession, at: insertIdx)
-        save()
+        scheduleSave()
         return newSession
     }
 
@@ -71,7 +75,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].groupName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     /// Updates session-level announcement for group chats.
@@ -82,7 +86,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].announcement = announcement
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     /// Updates group chat feature permissions.
@@ -93,7 +97,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].permissions = permissions
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     /// Updates mute flag for a session.
@@ -104,7 +108,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].isMuted = isMuted
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     /// Updates admin-only chat mode for a group session.
@@ -115,7 +119,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].adminOnly = adminOnly
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     /// Updates a display nickname for a participant in a session.
@@ -130,7 +134,7 @@ enum ChatStoreError: LocalizedError {
             sessions[idx].nicknames.removeValue(forKey: participantId)
         }
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     /// Adds one or more members into an existing group session.
@@ -142,7 +146,7 @@ enum ChatStoreError: LocalizedError {
         let merged = Set(sessions[idx].personaIds).union(personaIds)
         sessions[idx].personaIds = Array(merged)
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     /// Returns an existing group session with exactly this set of personas (order-independent), if any.
@@ -158,7 +162,7 @@ enum ChatStoreError: LocalizedError {
         let newSession = ChatSession(personaIds: [personaId], groupName: trimmed)
         let insertIdx = sessions.firstIndex(where: { !$0.isPinned }) ?? sessions.count
         sessions.insert(newSession, at: insertIdx)
-        save()
+        scheduleSave()
         return newSession
     }
 
@@ -191,7 +195,7 @@ enum ChatStoreError: LocalizedError {
             return
         }
         sessions.removeAll { $0.id == session.id }
-        save()
+        scheduleSave()
     }
 
     // MARK: - Message Operations
@@ -203,7 +207,6 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].messages.append(message)
         sessions[idx].updatedAt = Date()
-        // Bubble to top of the appropriate group
         let updated = sessions.remove(at: idx)
         if updated.isPinned {
             sessions.insert(updated, at: 0)
@@ -211,7 +214,7 @@ enum ChatStoreError: LocalizedError {
             let insertIdx = sessions.firstIndex(where: { !$0.isPinned }) ?? sessions.count
             sessions.insert(updated, at: insertIdx)
         }
-        save()
+        scheduleSave()
     }
 
     /// Clears all conversation messages (preserves system prompts).
@@ -222,7 +225,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].messages.removeAll { $0.role != .system }
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     /// Deletes a single message by id within a session.
@@ -238,7 +241,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].messages.removeAll { $0.id == id }
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
     }
 
     // MARK: - Polls
@@ -277,7 +280,7 @@ enum ChatStoreError: LocalizedError {
 
         sessions[idx].polls.insert(poll, at: 0)
         sessions[idx].updatedAt = Date()
-        save()
+        scheduleSave()
         return poll
     }
 
@@ -322,7 +325,7 @@ enum ChatStoreError: LocalizedError {
         }
 
         sessions[sIdx].updatedAt = Date()
-        save()
+        scheduleSave()
         return true
     }
 
@@ -354,7 +357,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].isPinned = true
         stableSort()
-        save()
+        scheduleSave()
     }
 
     func unpinSession(id: String) {
@@ -364,7 +367,7 @@ enum ChatStoreError: LocalizedError {
         }
         sessions[idx].isPinned = false
         stableSort()
-        save()
+        scheduleSave()
     }
 
     // MARK: - Search
@@ -378,8 +381,35 @@ enum ChatStoreError: LocalizedError {
 
     // MARK: - Persistence
 
-    private func save() {
+    private func scheduleSave() {
+        guard !isSaveScheduled else { return }
+        isSaveScheduled = true
+        pendingSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.saveThrottleInterval * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            performSave()
+            isSaveScheduled = false
+        }
+    }
+
+    private func performSave() {
         StorageService.shared.setAsync(kChatSessions, value: sessions)
+    }
+
+    /// Immediately flushes any pending saves. Use this before app suspension or critical operations.
+    func flushPendingSaves() {
+        pendingSaveTask?.cancel()
+        pendingSaveTask = nil
+        isSaveScheduled = false
+        performSave()
+    }
+
+    /// Performs a batch save of all sessions. Cancels any pending throttle saves.
+    func batchSave() {
+        pendingSaveTask?.cancel()
+        pendingSaveTask = nil
+        isSaveScheduled = false
+        performSave()
     }
 
     /// Stable-sort: pinned sessions first (preserving relative updatedAt order within group).

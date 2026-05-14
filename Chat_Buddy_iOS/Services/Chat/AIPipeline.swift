@@ -37,6 +37,35 @@ enum AIPipeline {
     /// Hard cap on context messages when below compression threshold.
     private static let maxContextMessages   = 20
 
+    // MARK: - System Prompt Cache
+
+    private static let systemPromptCache = NSCache<NSString, NSString>()
+    private static let cacheTimestampKey = "aipipeline_cache_timestamp"
+
+    private static func cacheKeyComponents(for personaId: String, aiLanguageCode: String, intimacyLevel: Int, memoryBlockHash: String, ragContextHash: String) -> String {
+        "\(personaId)|\(aiLanguageCode)|\(intimacyLevel)|\(memoryBlockHash)|\(ragContextHash)"
+    }
+
+    private static func hashString(_ str: String) -> String {
+        guard !str.isEmpty else { return "" }
+        var hasher = Hasher()
+        hasher.combine(str)
+        return String(hasher.finalize())
+    }
+
+    private static func invalidateCacheIfNeeded() {
+        let calendar = Calendar.current
+        let now = Date()
+        let lastInvalidation = UserDefaults.standard.object(forKey: cacheTimestampKey) as? Date
+
+        if let last = lastInvalidation, let hourDiff = calendar.dateComponents([.hour], from: last, to: now).hour, hourDiff >= 1 {
+            systemPromptCache.removeAllObjects()
+            UserDefaults.standard.set(now, forKey: cacheTimestampKey)
+        } else if lastInvalidation == nil {
+            UserDefaults.standard.set(now, forKey: cacheTimestampKey)
+        }
+    }
+
     // MARK: - Public
 
     /// Runs the full pipeline for one user turn and returns the parsed result.
@@ -151,6 +180,26 @@ enum AIPipeline {
         memoryService: MemoryService? = nil,
         ragContext: String = ""
     ) -> String {
+        invalidateCacheIfNeeded()
+
+        let memoryBlock = memoryService.map {
+            MemoryInjector.memoryBlock(for: persona.id, service: $0, isZh: aiLanguageCode.hasPrefix("zh"))
+        } ?? ""
+
+        let memoryBlockHash = hashString(memoryBlock)
+        let ragContextHash = hashString(ragContext)
+        let cacheKey = cacheKeyComponents(
+            for: persona.id,
+            aiLanguageCode: aiLanguageCode,
+            intimacyLevel: intimacyLevel,
+            memoryBlockHash: memoryBlockHash,
+            ragContextHash: ragContextHash
+        )
+
+        if let cached = systemPromptCache.object(forKey: cacheKey as NSString) {
+            return cached as String
+        }
+
         let isZh = aiLanguageCode.hasPrefix("zh")
         let mood  = MoodService.currentMood(for: persona)
         let level = AffinityLevel(rawValue: max(1, min(5, intimacyLevel))) ?? .acquaintance
@@ -164,12 +213,6 @@ enum AIPipeline {
         let moodHint     = isZh ? mood.promptHintZh  : mood.promptHint
         let affinityHint = isZh ? level.promptHintZh : level.promptHint
 
-        // Memory block (empty string if no memories or memoryService is nil)
-        let memoryBlock = memoryService.map {
-            MemoryInjector.memoryBlock(for: persona.id, service: $0, isZh: isZh)
-        } ?? ""
-
-        // Memory save hint
         let saveHint = MemoryInjector.memorySaveHint(isZh: isZh)
 
         let toolHint: String
@@ -185,8 +228,9 @@ enum AIPipeline {
             ? "若要发多条消息，使用格式 [MULTI:第一条|第二条]。若不想回复，直接返回 [SILENCE]。"
             : "To send multiple messages, use [MULTI:first message|second message]. To stay silent, respond with only [SILENCE]."
 
+        let prompt: String
         if isZh {
-            return """
+            prompt = """
             你是\(name)，一个AI伙伴。
             性格：\(personality)
             风格：\(style)
@@ -203,7 +247,7 @@ enum AIPipeline {
             以符合你性格的方式自然回复。不要提及自己是AI语言模型。回复保持简洁自然。
             """
         } else {
-            return """
+            prompt = """
             You are \(name), an AI companion.
             Personality: \(personality)
             Style: \(style)
@@ -220,6 +264,9 @@ enum AIPipeline {
             Respond naturally and in character. Never mention being an AI language model. Keep responses concise and natural.
             """
         }
+
+        systemPromptCache.setObject(prompt as NSString, forKey: cacheKey as NSString)
+        return prompt
     }
 
     // MARK: - Response Parsing

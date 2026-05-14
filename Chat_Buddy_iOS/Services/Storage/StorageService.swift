@@ -99,13 +99,17 @@ final class StorageService {
         let fullKey = prefixedKey(key)
         let defaultsRef = defaults
         Task.detached(priority: .utility) {
-            do {
-                let data = try Self.encoder.encode(value)
-                await MainActor.run {
-                    defaultsRef.set(data, forKey: fullKey)
+            await withTaskCancellationHandler {
+                do {
+                    let data = try Self.encoder.encode(value)
+                    await MainActor.run {
+                        defaultsRef.set(data, forKey: fullKey)
+                    }
+                } catch {
+                    Self.logger.error("Error encoding key \"\(key)\" async: \(error.localizedDescription)")
                 }
-            } catch {
-                Self.logger.error("Error encoding key \"\(key)\" async: \(error.localizedDescription)")
+            } onCancel: {
+                Self.logger.debug("setAsync cancelled for key \"\(key)\"")
             }
         }
     }
