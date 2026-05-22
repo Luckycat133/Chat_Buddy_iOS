@@ -94,8 +94,6 @@ yarn-error.log*
 pnpm-debug.log*
 
 # AI Agent & Meta
-.agents/
-.claude/
 .gemini/
 *.json.bak
 
