@@ -1,0 +1,5 @@
+interface:
+  display_name: "Code Review Excellence"
+  short_description: "Master effective code review practices to provide constructive feedback, catch bugs early, and foster knowledge sharing while maintaining team morale."
+policy:
+  allow_implicit_invocation: true
