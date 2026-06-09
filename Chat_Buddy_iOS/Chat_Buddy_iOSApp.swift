@@ -7,6 +7,7 @@
 
 import SwiftUI
 import BackgroundTasks
+import os
 
 @main
 struct Chat_Buddy_iOSApp: App {
@@ -29,10 +30,19 @@ struct Chat_Buddy_iOSApp: App {
     @State private var notificationService = NotificationService()
     @Environment(\.scenePhase) private var scenePhase
 
+    private let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "ChatBuddy",
+        category: "App"
+    )
+
     init() {
         // BGTask registration should happen as early as possible.
         // Info.plist must include BGTaskSchedulerPermittedIdentifiers with both keys.
-        MomentsBackgroundScheduler.register()
+        do {
+            try MomentsBackgroundScheduler.register()
+        } catch {
+            logger.error("BGTask registration failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     var body: some Scene {
@@ -63,7 +73,9 @@ struct Chat_Buddy_iOSApp: App {
             .environment(notificationService)
             .tint(accentColorManager.currentColor)
             .preferredColorScheme(themeManager.resolvedColorScheme)
-            .onAppear {
+            .task {
+                // .task runs once on first appearance and is cancelled if the
+                // view goes away — better than .onAppear for one-shot wiring.
                 MomentsBackgroundScheduler.configure(
                     momentsStore: momentsStore,
                     apiConfigStore: apiConfigStore
@@ -72,14 +84,22 @@ struct Chat_Buddy_iOSApp: App {
             .onReceive(NotificationCenter.default.publisher(for: MomentsBackgroundScheduler.momentsDataDidChange)) { _ in
                 momentsStore.reloadFromStorage()
             }
-            // Schedule next BGTask invocations when app moves to background
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .background {
-                    MomentsBackgroundScheduler.scheduleAll()
-                } else if newPhase == .active {
-                    momentsStore.reloadFromStorage()
-                }
+                handleScenePhaseChange(newPhase)
             }
+        }
+    }
+
+    private func handleScenePhaseChange(_ newPhase: ScenePhase) {
+        switch newPhase {
+        case .background:
+            MomentsBackgroundScheduler.scheduleAll()
+        case .active:
+            momentsStore.reloadFromStorage()
+        case .inactive:
+            break
+        @unknown default:
+            logger.warning("Unknown scene phase: \(String(describing: newPhase), privacy: .public)")
         }
     }
 }
