@@ -1,7 +1,10 @@
 import SwiftUI
+import os
 
 @Observable
 final class APIConfigStore {
+    private static let logger = Logger(subsystem: "com.chatbuddy", category: "APIConfigStore")
+
     var activeConfig: APIConfig {
         didSet { persistConfig() }
     }
@@ -26,7 +29,7 @@ final class APIConfigStore {
         do {
             try KeychainService.set(Self.profileKeyKey(profile.id), value: activeConfig.apiKey, requireBiometric: false)
         } catch {
-            print("Failed to save API key to keychain: \(error.localizedDescription)")
+            Self.logger.error("Failed to save API key to keychain: \(error.localizedDescription, privacy: .public)")
         }
         profiles.append(profile)
     }
@@ -36,7 +39,7 @@ final class APIConfigStore {
         do {
             config.apiKey = try KeychainService.get(Self.profileKeyKey(profile.id)) ?? ""
         } catch {
-            print("Failed to load API key from keychain: \(error.localizedDescription)")
+            Self.logger.error("Failed to load API key from keychain for profile \(profile.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
             config.apiKey = ""
         }
         activeConfig = config
@@ -46,7 +49,7 @@ final class APIConfigStore {
         do {
             try KeychainService.delete(Self.profileKeyKey(profile.id))
         } catch {
-            print("Failed to delete API key from keychain: \(error.localizedDescription)")
+            Self.logger.error("Failed to delete API key from keychain for profile \(profile.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
         profiles.removeAll { $0.id == profile.id }
     }
@@ -56,7 +59,7 @@ final class APIConfigStore {
             do {
                 try KeychainService.delete(Self.profileKeyKey(profiles[index].id))
             } catch {
-                print("Failed to delete API key from keychain: \(error.localizedDescription)")
+                Self.logger.error("Failed to delete API key from keychain: \(error.localizedDescription, privacy: .public)")
             }
         }
         profiles.remove(atOffsets: offsets)
@@ -73,7 +76,7 @@ final class APIConfigStore {
         do {
             config.apiKey = try KeychainService.get(activeKeyKey) ?? ""
         } catch {
-            print("Failed to load API key from keychain: \(error.localizedDescription)")
+            Self.logger.error("Failed to load active API key from keychain: \(error.localizedDescription, privacy: .public)")
             config.apiKey = ""
         }
 
@@ -82,7 +85,7 @@ final class APIConfigStore {
             do {
                 savedProfiles[i].config.apiKey = try KeychainService.get(profileKeyKey(savedProfiles[i].id)) ?? ""
             } catch {
-                print("Failed to load profile API key from keychain: \(error.localizedDescription)")
+                Self.logger.error("Failed to load profile \(savedProfiles[i].id, privacy: .public) API key from keychain: \(error.localizedDescription, privacy: .public)")
                 savedProfiles[i].config.apiKey = ""
             }
         }
@@ -94,7 +97,7 @@ final class APIConfigStore {
         do {
             try KeychainService.set(Self.activeKeyKey, value: activeConfig.apiKey)
         } catch {
-            print("Failed to save API key to keychain: \(error.localizedDescription)")
+            Self.logger.error("Failed to save active API key to keychain: \(error.localizedDescription, privacy: .public)")
         }
     }
 
