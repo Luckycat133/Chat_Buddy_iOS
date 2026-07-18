@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import LocalAuthentication
+import os
 
 enum KeychainError: LocalizedError {
     case encodingFailed
