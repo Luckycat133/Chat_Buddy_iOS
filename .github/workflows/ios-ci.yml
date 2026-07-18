@@ -1,0 +1,39 @@
+name: iOS CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-unit-test:
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26.5
+        run: sudo xcode-select --switch /Applications/Xcode_26.5.app/Contents/Developer
+
+      - name: Show toolchain
+        run: xcodebuild -version
+
+      - name: Build and run unit tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Chat_Buddy_iOS.xcodeproj \
+            -scheme Chat_Buddy_iOS \
+            -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' \
+            -only-testing:Chat_Buddy_iOSTests \
+            CODE_SIGNING_ALLOWED=NO
