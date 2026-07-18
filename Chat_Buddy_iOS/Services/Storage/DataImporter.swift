@@ -60,7 +60,7 @@ struct DataImporter {
             configStore.activeConfig = config
             // 如果备份中包含 API 密钥，也保存到 Keychain
             if !config.apiKey.isEmpty {
-                KeychainService.set(APIConfigStore.activeKeyKey, value: config.apiKey)
+                try KeychainService.set(APIConfigStore.activeKeyKey, value: config.apiKey)
             }
             count += 1
         }
@@ -70,7 +70,7 @@ struct DataImporter {
             // 如果备份中包含 API 密钥，也保存到 Keychain
             for profile in profiles {
                 if !profile.config.apiKey.isEmpty {
-                    KeychainService.set(APIConfigStore.profileKeyKey(profile.id), value: profile.config.apiKey)
+                    try KeychainService.set(APIConfigStore.profileKeyKey(profile.id), value: profile.config.apiKey)
                 }
             }
             count += profiles.count
