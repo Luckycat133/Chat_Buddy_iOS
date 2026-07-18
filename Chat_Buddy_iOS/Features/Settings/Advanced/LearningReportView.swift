@@ -29,20 +29,18 @@ struct LearningReportView: View {
     }
 
     private var reportText: String {
-        [
-            isZh ? "学习报告" : "Learning Report",
-            DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .short),
-            "",
-            (isZh ? "会话数" : "Sessions") + ": \(totalSessions)",
-            (isZh ? "消息数" : "Messages") + ": \(totalMessages)",
-            (isZh ? "积分" : "Points") + ": \(social.points)",
-            (isZh ? "签到连续" : "Streak") + ": \(social.streakDays)",
-            (isZh ? "今日任务完成率" : "Daily Task Completion") + ": \(Int(completionRate * 100))%",
-            "",
-            isZh ? "高频互动角色：" : "Most interacted personas:",
-            topPersonas.prefix(5).map { "- \($0.name): \($0.count)" }.joined(separator: "\n")
-        ]
-        .joined(separator: "\n")
+        let title = isZh ? "学习报告" : "Learning Report"
+        let date = DateFormatter.localizedString(from: Date(), dateStyle: .medium, timeStyle: .short)
+        let sessions = "\(isZh ? "会话数" : "Sessions"): \(totalSessions)"
+        let messages = "\(isZh ? "消息数" : "Messages"): \(totalMessages)"
+        let points = "\(isZh ? "积分" : "Points"): \(social.points)"
+        let streak = "\(isZh ? "签到连续" : "Streak"): \(social.streakDays)"
+        let completion = "\(isZh ? "今日任务完成率" : "Daily Task Completion"): \(Int(completionRate * 100))%"
+        let personasTitle = isZh ? "高频互动角色：" : "Most interacted personas:"
+        let personas = topPersonas.prefix(5).map { "- \($0.name): \($0.count)" }.joined(separator: "\n")
+
+        return [title, date, "", sessions, messages, points, streak, completion, "", personasTitle, personas]
+            .joined(separator: "\n")
     }
 
     var body: some View {
