@@ -127,13 +127,9 @@ enum KeychainService {
             logger.warning("Authentication failed for key: \(key)")
             throw KeychainError.authenticationFailed
 
-        case errSecBiometryNotAvailable, errSecBiometryNotEnrolled:
-            logger.warning("Biometric not available for key: \(key)")
+        case errSecInteractionNotAllowed:
+            logger.warning("Keychain interaction is not available for key: \(key)")
             throw KeychainError.biometricNotAvailable
-
-        case errSecBiometryLockout:
-            logger.warning("Biometric locked out for key: \(key)")
-            throw KeychainError.biometricFailed
 
         default:
             logger.error("Keychain error for key \(key): \(status)")
