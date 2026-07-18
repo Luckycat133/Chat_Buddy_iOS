@@ -56,7 +56,7 @@ struct KnowledgeBaseView: View {
 
                 if !data.docs.isEmpty {
                     Button(role: .destructive) {
-                        for doc in data.docs { RAGService.removeDocumentFromIndex(id: doc.id) }
+                        for doc in data.docs { RAGService.removeDocumentFromIndex(documentId: doc.id) }
                         data.docs.removeAll()
                         save()
                     } label: {
@@ -90,7 +90,7 @@ struct KnowledgeBaseView: View {
                         .padding(.vertical, 2)
                         .swipeActions {
                             Button(role: .destructive) {
-                                RAGService.removeDocumentFromIndex(id: doc.id)
+                                RAGService.removeDocumentFromIndex(documentId: doc.id)
                                 data.docs.removeAll { $0.id == doc.id }
                                 save()
                             } label: {
@@ -142,7 +142,7 @@ struct KnowledgeBaseView: View {
             data.docs.insert(doc, at: 0)
             save()
             // Index document for RAG search
-            RAGService.addDocumentToIndex(id: doc.id, title: doc.name, content: doc.content)
+            RAGService.addDocumentToIndex(id: doc.id, name: doc.name, content: doc.content)
             errorText = nil
         } catch {
             errorText = error.localizedDescription
