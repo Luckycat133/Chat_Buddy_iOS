@@ -125,7 +125,7 @@ struct GroupDetailsView: View {
                                      ? (isZh ? "已结束" : "Closed")
                                      : (isZh ? "进行中" : "Active"))
                                     .font(DSTypography.caption2)
-                                    .foregroundStyle(poll.isExpired ? .secondary : .green)
+                                    .foregroundStyle(poll.isExpired ? Color.secondary : Color.green)
                             }
                         }
                     }
