@@ -41,7 +41,7 @@ struct ModelSwitcherView: View {
     var body: some View {
         List {
             Section(isZh ? "模型选择" : "Model") {
-                ForEach(ModelPreset.all) { preset in
+                ForEach(ModelPreset.all, id: \.id) { (preset: ModelPreset) in
                     Button {
                         selectedModel = preset.id
                     } label: {
