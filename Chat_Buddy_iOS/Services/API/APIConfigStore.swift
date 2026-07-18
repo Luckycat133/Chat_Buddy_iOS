@@ -15,8 +15,8 @@ final class APIConfigStore {
 
     private let storage = StorageService.shared
 
-    private static let activeKeyKey = "api-key-active"
-    private static func profileKeyKey(_ id: UUID) -> String { "api-key-profile-\(id.uuidString)" }
+    static let activeKeyKey = "api-key-active"
+    static func profileKeyKey(_ id: UUID) -> String { "api-key-profile-\(id.uuidString)" }
 
     init() {
         let (config, savedProfiles) = Self.loadFromStorage(storage: StorageService.shared)
