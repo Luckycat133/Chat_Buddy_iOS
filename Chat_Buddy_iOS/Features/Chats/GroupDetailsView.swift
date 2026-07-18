@@ -117,7 +117,7 @@ struct GroupDetailsView: View {
                             .font(DSTypography.caption1)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(session.polls) { poll in
+                        ForEach(session.polls, id: \.id) { (poll: ChatPoll) in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(poll.question)
                                     .font(DSTypography.footnote.weight(.semibold))
