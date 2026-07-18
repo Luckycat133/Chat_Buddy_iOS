@@ -17,7 +17,13 @@ struct ChatView: View {
 
     let sessionId: String
     let persona: Persona
-    let initialFocusMessageId: String? = nil
+    let initialFocusMessageId: String?
+
+    init(sessionId: String, persona: Persona, initialFocusMessageId: String? = nil) {
+        self.sessionId = sessionId
+        self.persona = persona
+        self.initialFocusMessageId = initialFocusMessageId
+    }
 
     @State private var viewModel = ChatViewModel()
     @State private var showClearAlert = false
