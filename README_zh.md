@@ -2,6 +2,9 @@
 
 # Chat Buddy iOS
 
+> **状态：积极开发中 —— Chat Buddy 的主要开发版本。**
+> [Web 版本](https://github.com/Luckycat133/Chat_Buddy)现处于维护模式，并作为现有用户数据迁移到 iOS 的来源。
+
 **Chat Buddy iOS** 是一款基于 SwiftUI 纯原生打造的高性能智能 AI 伴侣应用。该项目将广受欢迎的 Web 端“Chat Buddy”的核心功能深度迁移至 iOS 环境，提供了无缝衔接且纯粹的原生体验。
 
 ![iOS 26+](https://img.shields.io/badge/iOS-26.0+-black?style=flat&logo=apple)
@@ -15,6 +18,15 @@
 - 🌌 **沉浸式动态粒子背景**: 支持极致性能、极低功耗的流体动态壁纸。轻量级动画（如极光）使用 SwiftUI `Canvas` 绘制，复杂的粒子特效（雪、雨、火焰、星空）则由底层的 SpriteKit (`SKEmitterNode`) 提供毫不费力的 60fps 硬件加速渲染。
 - ⏱️ **Moments 后台编排 (朋友圈)**: 深度集成 iOS `BackgroundTasks` 机制 (`BGAppRefreshTask` & `BGProcessingTask`)。你的 AI 伴侣们能够自主、自然地在后台发文字/图片状态、记住你的生日、甚至在特定的节假日为你送出祝福，即便你并未打开应用。
 - 🎨 **顶级原生 UI/UX**: 配备严谨的 Glassmorphism 毛玻璃设计系统。支持自定义提取主题强调色、流畅的 SwiftUI 过渡动画，并在整个应用内完美支持英文和简体中文的动态双语切换。
+
+## 🗺 版本路线
+
+- **MVP 稳定化（当前）**：保持 Web → iOS 数据 schema 兼容，扩充核心聊天和存储测试，并在真机上验证后台任务。
+- **内部测试**：完成迁移测试，在小型设备矩阵上收集崩溃和性能反馈。
+- **TestFlight**：发布已签名的测试版，补齐发布说明、隐私声明和可重复的归档流程。
+- **App Store**：上线前完成审核素材、支持文档和生产监控。
+
+后台刷新属于机会性调度：实际执行时间由 iOS 决定，应用不承诺在固定时刻执行。API Key 存储在 Keychain，不会以明文写入 `UserDefaults`。
 
 ## 🛠 技术栈
 
@@ -31,6 +43,8 @@
 2. 用 Xcode 打开 `Chat_Buddy_iOS.xcodeproj` (最低要求 Xcode 26.2+)。
 3. 本项目完全使用标准的 iOS 原生框架，不需要繁杂的第三方依赖 (No CocoaPods / No SPM)。
 4. 选择 iOS 模拟器或真实设备，按下 `Cmd + R` 即可直接编译运行！
+
+Pull Request 会在 GitHub Actions 中使用 macOS 26 和 Xcode 26.5 自动构建并运行单元测试。
 
 ### 终端构建与测试
 
