@@ -93,10 +93,11 @@ enum AIPipeline {
         // RAG context injection
         var ragBlock = ""
         if ragEnabled, let query = userQuery ?? session.displayMessages.last(where: { $0.role == .user })?.content {
-            let ragResults = RAGService.searchDocuments(query: query, topK: 3)
-            if !ragResults.isEmpty {
-                ragBlock = RAGService.buildRAGContext(ragResults)
-            }
+            ragBlock = RAGService.buildRAGContext(
+                query: query,
+                indexedChunks: RAGService.loadIndex(),
+                topK: 3
+            ) ?? ""
         }
 
         let systemMsg = ChatMessage(

@@ -1,7 +1,30 @@
 import Foundation
 import os.log
 
-actor AIClient {
+protocol AIClientProtocol: Sendable {
+    func sendChatCompletion(
+        messages: [ChatMessage],
+        model: String?,
+        temperature: Double?,
+        config: APIConfig
+    ) async throws -> ChatCompletionResponse
+}
+
+extension AIClientProtocol {
+    func sendChatCompletion(
+        messages: [ChatMessage],
+        config: APIConfig
+    ) async throws -> ChatCompletionResponse {
+        try await sendChatCompletion(
+            messages: messages,
+            model: nil,
+            temperature: nil,
+            config: config
+        )
+    }
+}
+
+actor AIClient: AIClientProtocol {
     static let shared = AIClient()
 
     private var apiClient: APIClient

@@ -17,7 +17,13 @@ struct ChatView: View {
 
     let sessionId: String
     let persona: Persona
-    let initialFocusMessageId: String? = nil
+    let initialFocusMessageId: String?
+
+    init(sessionId: String, persona: Persona, initialFocusMessageId: String? = nil) {
+        self.sessionId = sessionId
+        self.persona = persona
+        self.initialFocusMessageId = initialFocusMessageId
+    }
 
     @State private var viewModel = ChatViewModel()
     @State private var showClearAlert = false
@@ -354,7 +360,7 @@ struct ChatView: View {
                 scrollToMessageId = initialFocusMessageId
             }
             // Proactive greeting
-            let lastDate = viewModel.messages.last?.timestamp
+            let lastDate = allMessages.last?.timestamp
             let isZhUI = localization.uiLanguage.resolved == .zh
             if let greeting = GreetingService.checkWindowOpenGreeting(
                 lastMessageDate: lastDate,
@@ -362,7 +368,7 @@ struct ChatView: View {
                 isZh: isZhUI
             ) {
                 let greetMsg = ChatMessage(role: .assistant, content: greeting)
-                viewModel.messages.append(greetMsg)
+                chatStore.appendMessage(greetMsg, to: sessionId)
             }
         }
         .task(id: viewModel.inputText) {

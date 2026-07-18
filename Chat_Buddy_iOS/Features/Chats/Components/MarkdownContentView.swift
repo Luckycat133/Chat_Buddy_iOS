@@ -203,7 +203,7 @@ struct MarkdownContentView: View {
                 // Only highlight if it's a word boundary
                 let before = range.lowerBound == result.startIndex
                 let after = range.upperBound == result.endIndex
-                if (before || !String(result.characters[result.index(before: range.lowerBound)]).first!.isLetter)
+                if (before || !String(result.characters[result.index(beforeCharacter: range.lowerBound)]).first!.isLetter)
                     && (after || !String(result.characters[range.upperBound]).first!.isLetter) {
                     result[range].foregroundColor = .purple
                     result[range].font = .system(size: 12, weight: .semibold, design: .monospaced)

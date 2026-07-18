@@ -77,14 +77,14 @@ actor APIClient {
                     Double(maxRetries - retriesLeft + 1) + Double.random(in: 0...0.5),
                     Self.maxRetryDelay
                 )
-                Self.logger.info("Rate limited (429), retrying in \(waitTime, format: .seconds(style: .floatingPoint))s...")
+                Self.logger.info("Rate limited (429), retrying in \(waitTime, privacy: .public)s...")
                 try await Task.sleep(for: .seconds(waitTime))
                 return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
 
             if httpResponse.statusCode >= 500 && retriesLeft > 0 {
                 let waitTime = min(1.0 * Double(maxRetries - retriesLeft + 1), Self.maxRetryDelay)
-                Self.logger.info("Server error (\(httpResponse.statusCode)), retrying in \(waitTime, format: .seconds(style: .floatingPoint))s...")
+                Self.logger.info("Server error (\(httpResponse.statusCode)), retrying in \(waitTime, privacy: .public)s...")
                 try await Task.sleep(for: .seconds(waitTime))
                 return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
@@ -101,7 +101,7 @@ actor APIClient {
         } catch {
             if retriesLeft > 0 && !(error is CancellationError) {
                 let waitTime = Double(attempt + 1)
-                Self.logger.info("Network error, retrying in \(waitTime, format: .seconds(style: .floatingPoint))s...")
+                Self.logger.info("Network error, retrying in \(waitTime, privacy: .public)s...")
                 try await Task.sleep(for: .seconds(waitTime))
                 return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }

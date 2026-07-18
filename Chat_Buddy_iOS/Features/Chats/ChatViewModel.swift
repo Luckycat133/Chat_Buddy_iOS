@@ -173,7 +173,7 @@ enum ChatViewModelError: LocalizedError {
         isTyping = false
     }
 
-    private func saveNewMemories(_ memories: [ExtractedMemory], for personaId: String, service: MemoryService?) {
+    private func saveNewMemories(_ memories: [AIPipeline.ExtractedMemory], for personaId: String, service: MemoryService?) {
         for extracted in memories {
             service?.addMemory(
                 personaId: personaId,

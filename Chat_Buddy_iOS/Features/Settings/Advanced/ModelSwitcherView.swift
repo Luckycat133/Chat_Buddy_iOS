@@ -41,7 +41,7 @@ struct ModelSwitcherView: View {
     var body: some View {
         List {
             Section(isZh ? "模型选择" : "Model") {
-                ForEach(ModelPreset.all) { preset in
+                ForEach(ModelPreset.all, id: \.id) { (preset: ModelPreset) in
                     Button {
                         selectedModel = preset.id
                     } label: {
@@ -57,7 +57,7 @@ struct ModelSwitcherView: View {
                             Spacer()
                             if selectedModel == preset.id {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.accent)
+                                    .foregroundStyle(Color.accentColor)
                             }
                         }
                     }
