@@ -57,7 +57,7 @@ struct ModelSwitcherView: View {
                             Spacer()
                             if selectedModel == preset.id {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.accent)
+                                    .foregroundStyle(Color.accentColor)
                             }
                         }
                     }
