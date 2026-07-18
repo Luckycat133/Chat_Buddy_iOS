@@ -28,12 +28,26 @@ jobs:
       - name: Show toolchain
         run: xcodebuild -version
 
+      - name: Prepare iOS simulator
+        run: |
+          set -euo pipefail
+          SIMULATOR_UDID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone 17 Pro/ {print $2; exit}')
+          if [ -z "$SIMULATOR_UDID" ]; then
+            SIMULATOR_UDID=$(xcrun simctl create \
+              'CI iPhone 17 Pro' \
+              'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro' \
+              'com.apple.CoreSimulator.SimRuntime.iOS-26-5')
+          fi
+          echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$SIMULATOR_UDID" || true
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+
       - name: Build and run unit tests
         run: |
           set -o pipefail
           xcodebuild test \
             -project Chat_Buddy_iOS.xcodeproj \
             -scheme Chat_Buddy_iOS \
-            -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17 Pro' \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -only-testing:Chat_Buddy_iOSTests \
             CODE_SIGNING_ALLOWED=NO
