@@ -4,12 +4,9 @@ import os.log
 final class StorageService {
     static let shared = StorageService()
 
-    private static let logger = Logger(subsystem: "com.chatbuddy", category: "StorageService")
-    private static let encoder: JSONEncoder = {
-        let e = JSONEncoder()
-        return e
-    }()
-    private static let decoder = JSONDecoder()
+    private static let logger = Logger.app(category: "StorageService")
+    private static let encoder = JSONEncoder.default
+    private static let decoder = JSONDecoder.default
 
     enum ImportValidationError: LocalizedError {
         case keyNotAllowed(String)
@@ -38,13 +35,16 @@ final class StorageService {
         "drafts",
         "friends.groups",
         "friends.meta",
+        "greetingCooldowns",
         "intimacy",
         "knowledgeBase",
         "knowledgeGraph.custom",
         "memories",
         "moments",
         "personas.custom",
+        "ragIndex",
         "social",
+        "stickers",
         "userProfile",
     ]
 
@@ -116,6 +116,24 @@ final class StorageService {
 
     func remove(_ key: String) {
         defaults.removeObject(forKey: prefixedKey(key))
+    }
+
+    /// One-time storage key migration.
+    ///
+    /// Copies the raw persisted payload from `legacyFullKey` (which must already include
+    /// the full `"chat-buddy:"` prefix as previously stored) to the canonical prefixed
+    /// form of `newKey`, then deletes the legacy key.
+    ///
+    /// Idempotent: a no-op when the legacy key is absent, so it is safe to call on every
+    /// load. Used to migrate legacy double-prefixed keys such as `chat-buddy:chat-buddy-stickers`
+    /// to the canonical `chat-buddy:stickers`.
+    @discardableResult
+    func migrate(legacyFullKey: String, to newKey: String) -> Bool {
+        guard let data = defaults.data(forKey: legacyFullKey) else { return false }
+        defaults.set(data, forKey: prefixedKey(newKey))
+        defaults.removeObject(forKey: legacyFullKey)
+        Self.logger.info("Migrated storage from \"\(legacyFullKey, privacy: .public)\" to \"\(newKey, privacy: .public)\"")
+        return true
     }
 
     func clear() {

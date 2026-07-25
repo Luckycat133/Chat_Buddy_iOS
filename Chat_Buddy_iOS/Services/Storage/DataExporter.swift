@@ -14,7 +14,7 @@ struct AppBackup: Codable {
 }
 
 struct DataExporter {
-    private static let logger = Logger(subsystem: "com.chatbuddy", category: "DataExporter")
+    private static let logger = Logger.app(category: "DataExporter")
 
     static func exportAll(configStore: APIConfigStore, includeSensitiveData: Bool = false) -> AppBackup {
         var sanitizedConfig: APIConfig?
@@ -41,10 +41,7 @@ struct DataExporter {
 
     static func exportToData(configStore: APIConfigStore, includeSensitiveData: Bool = false) throws -> Data {
         let backup = exportAll(configStore: configStore, includeSensitiveData: includeSensitiveData)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(backup)
+        return try JSONEncoder.iso8601Sorted.encode(backup)
     }
 
     private static func exportSettings() -> [String: String] {

@@ -43,7 +43,7 @@ enum KeychainError: LocalizedError {
 
 enum KeychainService {
     private static let service = "com.chatbuddy.ios"
-    private static let logger = Logger(subsystem: "com.chatbuddy", category: "KeychainService")
+    private static let logger = Logger.app(category: "KeychainService")
 
     static func set(_ key: String, value: String, requireBiometric: Bool = false) throws {
         guard let data = value.data(using: .utf8) else {

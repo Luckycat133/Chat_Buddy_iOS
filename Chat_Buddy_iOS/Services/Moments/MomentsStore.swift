@@ -2,6 +2,7 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
+import os.log
 
 /// Observable store for the Moments social feed.
 /// Persists a single `MomentsData` blob at `chat-buddy:moments`.
@@ -13,6 +14,7 @@ import UIKit
     var lastStoryEventDate: String? = nil
 
     private static let storageKey = "moments"
+    private static let logger = Logger.app(category: "MomentsStore")
     private static let momentsFolderName = "moments"
 
     // MARK: - Init
@@ -163,7 +165,7 @@ import UIKit
             try jpeg.write(to: url)
             return filename
         } catch {
-            print("[MomentsStore] Failed to save image: \(error)")
+            Self.logger.error("Failed to save image: \(error.localizedDescription, privacy: .public)")
             return nil
         }
 #else
@@ -174,7 +176,7 @@ import UIKit
             try data.write(to: url)
             return filename
         } catch {
-            print("[MomentsStore] Failed to save image: \(error)")
+            Self.logger.error("Failed to save image: \(error.localizedDescription, privacy: .public)")
             return nil
         }
 #endif

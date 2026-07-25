@@ -72,8 +72,7 @@ enum MomentsService {
     // MARK: - Time Context
 
     static func timeContext() -> String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
+        switch Date.currentHour {
         case 5..<12:  return "morning"
         case 12..<17: return "afternoon"
         case 17..<21: return "evening"

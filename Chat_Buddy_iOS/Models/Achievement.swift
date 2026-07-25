@@ -144,8 +144,6 @@ struct DailyTaskState: Codable {
     var isToday: Bool { date == Self.todayString }
 
     static var todayString: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        return fmt.string(from: Date())
+        DateFormatter.isoDay.string(from: Date())
     }
 }

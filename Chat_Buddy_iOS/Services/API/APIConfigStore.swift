@@ -3,7 +3,7 @@ import os
 
 @Observable
 final class APIConfigStore {
-    private static let logger = Logger(subsystem: "com.chatbuddy", category: "APIConfigStore")
+    private static let logger = Logger.app(category: "APIConfigStore")
 
     var activeConfig: APIConfig {
         didSet { persistConfig() }

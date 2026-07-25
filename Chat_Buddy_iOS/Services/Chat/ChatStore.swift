@@ -2,7 +2,7 @@ import SwiftUI
 import os.log
 
 private let kChatSessions = "chatSessions"
-private let logger = Logger(subsystem: "com.chatbuddy", category: "ChatStore")
+private let logger = Logger.app(category: "ChatStore")
 
 enum ChatStoreError: LocalizedError {
     case sessionNotFound(String)

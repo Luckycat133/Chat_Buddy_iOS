@@ -55,13 +55,24 @@ enum GreetingService {
         var globalLast: Date = .distantPast
     }
 
-    private static let cooldownKey = "chat-buddy-greeting-cooldowns"
+    private static let cooldownKey = "greetingCooldowns"
+    /// Legacy key from before the storage-prefix fix — migrated on first load.
+    private static let legacyCooldownKey = "chat-buddy:chat-buddy-greeting-cooldowns"
+    private static var didMigrate = false
+
+    private static func migrateIfNeeded() {
+        guard !didMigrate else { return }
+        didMigrate = true
+        StorageService.shared.migrate(legacyFullKey: legacyCooldownKey, to: cooldownKey)
+    }
 
     private static func loadCooldowns() -> Cooldowns {
-        StorageService.shared.get(cooldownKey, default: Cooldowns())
+        migrateIfNeeded()
+        return StorageService.shared.get(cooldownKey, default: Cooldowns())
     }
 
     private static func saveCooldowns(_ c: Cooldowns) {
+        migrateIfNeeded()
         StorageService.shared.set(cooldownKey, value: c)
     }
 
@@ -96,8 +107,7 @@ enum GreetingService {
            now.timeIntervalSince(last) < perPersonaCooldownSeconds { return nil }
 
         // Pick template by time of day
-        let hour = Calendar.current.component(.hour, from: now)
-        let template = pickTemplate(hour: hour, isReEngagement: false)
+        let template = pickTemplate(hour: now.hour, isReEngagement: false)
         let message = isZh ? template.zh : template.en
 
         // Update cooldowns
@@ -147,7 +157,7 @@ enum GreetingService {
     // MARK: - Private
 
     private static func pickTemplate(hour: Int, isReEngagement: Bool) -> GreetingTemplate {
-        if isReEngagement { return reEngagement.randomElement()! }
+        if isReEngagement { return reEngagement.randomElement() ?? reEngagement[0] }
         let templates: [GreetingTemplate]
         switch hour {
         case 6..<12:  templates = morning
@@ -155,6 +165,6 @@ enum GreetingService {
         case 18..<22: templates = evening
         default:      templates = lateNight
         }
-        return templates.randomElement()!
+        return templates.randomElement() ?? templates[0]
     }
 }

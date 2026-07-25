@@ -106,7 +106,11 @@ struct DataImporter {
         for store in stores {
             store.reloadFromStorage()
         }
-        PersonaStore.invalidateCache()
+        // Note: `CustomPersonaStore` is included in `stores`, so its
+        // `reloadFromStorage()` refreshes the in-memory custom personas.
+        // `PersonaStore` is now stateless (delegates to
+        // `customPersonasProvider` → `CustomPersonaStore.shared.customPersonas`),
+        // so no separate cache invalidation is needed here.
 
         return count
     }

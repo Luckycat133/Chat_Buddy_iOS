@@ -1,17 +1,17 @@
 import SwiftUI
 
 enum PersonaStore {
-    private static let customPersonasKey = "personas.custom"
 
-    private static var _customPersonasCache: [Persona]?
-    private static var _personaIndex: [String: Persona]?
+    // MARK: - Custom Persona SPI
 
-    static var customPersonas: [Persona] {
-        if let cached = _customPersonasCache { return cached }
-        let loaded: [Persona] = StorageService.shared.get(customPersonasKey, default: [])
-        _customPersonasCache = loaded
-        return loaded
-    }
+    /// Provides user-created custom personas to the Model layer.
+    ///
+    /// Defaults to empty so `PersonaStore` has no Infrastructure dependency.
+    /// The app wires this to `CustomPersonaStore.shared.customPersonas` at
+    /// launch (see `Chat_Buddy_iOSApp.init`).
+    static var customPersonasProvider: () -> [Persona] = { [] }
+
+    static var customPersonas: [Persona] { customPersonasProvider() }
 
     static var customSocialCompanions: [Persona] {
         customPersonas.filter { $0.agentType == .socialCompanion }
@@ -25,40 +25,17 @@ enum PersonaStore {
         socialCompanions + taskAgents + customPersonas
     }
 
+    /// Look up any persona (built-in or custom) by id.
+    /// Built-in personas use a precomputed index for O(1) lookup; custom
+    /// personas fall back to a linear scan of the provider's current value.
+    private static let builtInIndex: [String: Persona] = Dictionary(
+        uniqueKeysWithValues: (socialCompanions + taskAgents).map { ($0.id, $0) },
+        uniquingKeysWith: { _, last in last }
+    )
+
     static func persona(byId id: String) -> Persona? {
-        if let cached = _personaIndex?[id] { return cached }
-        let index = buildIndex()
-        return index[id]
-    }
-
-    static func upsertCustomPersona(_ persona: Persona) {
-        var all = customPersonas
-        if let index = all.firstIndex(where: { $0.id == persona.id }) {
-            all[index] = persona
-        } else {
-            all.append(persona)
-        }
-        StorageService.shared.set(customPersonasKey, value: all)
-        invalidateCache()
-    }
-
-    static func deleteCustomPersona(id: String) {
-        var all = customPersonas
-        all.removeAll { $0.id == id }
-        StorageService.shared.set(customPersonasKey, value: all)
-        invalidateCache()
-    }
-
-    static func invalidateCache() {
-        _customPersonasCache = nil
-        _personaIndex = nil
-    }
-
-    private static func buildIndex() -> [String: Persona] {
-        if let cached = _personaIndex { return cached }
-        let index = Dictionary(uniqueKeysWithValues: allPersonas.map { ($0.id, $0) })
-        _personaIndex = index
-        return index
+        if let builtIn = builtInIndex[id] { return builtIn }
+        return customPersonasProvider().first { $0.id == id }
     }
 
     static let colorMap: [String: Color] = [

@@ -11,7 +11,7 @@ import Foundation
     private var cooldowns: [String: Date] = [:]
 
     private static let cooldownDuration: TimeInterval = 5 * 60   // 5 minutes
-    private static let storageKey = "chat-buddy:intimacy"
+    private static let storageKey = "intimacy"
 
     init() { load() }
 
@@ -55,13 +55,10 @@ import Foundation
     // MARK: - Persistence
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: Self.storageKey),
-              let decoded = try? JSONDecoder().decode([String: Int].self, from: data) else { return }
-        scores = decoded
+        scores = StorageService.shared.get(Self.storageKey, default: [String: Int]())
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(scores) else { return }
-        UserDefaults.standard.set(data, forKey: Self.storageKey)
+        StorageService.shared.set(Self.storageKey, value: scores)
     }
 }

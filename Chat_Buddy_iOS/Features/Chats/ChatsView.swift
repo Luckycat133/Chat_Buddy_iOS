@@ -227,17 +227,10 @@ private struct ChatSessionRow: View {
 
     private func relativeTime(_ date: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return Self.timeFormatter.string(from: date) }
+        if calendar.isDateInToday(date) { return DateFormatter.chatTime.string(from: date) }
         if calendar.isDateInYesterday(date) { return localization.t("chats_yesterday") }
-        return Self.shortDateFormatter.string(from: date)
+        return DateFormatter.shortDate.string(from: date)
     }
-
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
-    }()
-    private static let shortDateFormatter: DateFormatter = {
-        let f = DateFormatter(); f.dateStyle = .short; return f
-    }()
 }
 
 // MARK: - Persona Picker Sheet

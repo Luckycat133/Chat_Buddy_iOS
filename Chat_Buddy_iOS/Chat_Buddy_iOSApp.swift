@@ -28,6 +28,8 @@ struct Chat_Buddy_iOSApp: App {
     @State private var memoryService = MemoryService()
     @State private var toolExecutorService = ToolExecutorService()
     @State private var notificationService = NotificationService()
+    @State private var knowledgeBaseStore = KnowledgeBaseStore()
+    @State private var knowledgeGraphStore = KnowledgeGraphStore()
     @Environment(\.scenePhase) private var scenePhase
 
     private let logger = Logger(
@@ -36,6 +38,11 @@ struct Chat_Buddy_iOSApp: App {
     )
 
     init() {
+        // Wire the custom-persona provider so `PersonaStore` (Model layer) can
+        // read user-created personas without depending on StorageService. Must
+        // run before any view body is evaluated.
+        PersonaStore.customPersonasProvider = { CustomPersonaStore.shared.customPersonas }
+
         // BGTask registration should happen as early as possible.
         // Info.plist must include BGTaskSchedulerPermittedIdentifiers with both keys.
         do {
@@ -47,6 +54,28 @@ struct Chat_Buddy_iOSApp: App {
 
     var body: some Scene {
         WindowGroup {
+            let dataBackupCoordinator = DataBackupCoordinator(
+                configStore: apiConfigStore,
+                localization: localization,
+                themeManager: themeManager,
+                accentColorManager: accentColorManager,
+                appState: appState,
+                stores: [
+                    chatStore,
+                    affinityService,
+                    bookmarkService,
+                    draftService,
+                    momentsStore,
+                    backgroundStore,
+                    userProfileStore,
+                    socialService,
+                    friendService,
+                    memoryService,
+                    knowledgeBaseStore,
+                    knowledgeGraphStore,
+                    CustomPersonaStore.shared,
+                ]
+            )
             Group {
                 if appState.hasCompletedOnboarding {
                     RootTabView()
@@ -71,6 +100,10 @@ struct Chat_Buddy_iOSApp: App {
             .environment(memoryService)
             .environment(toolExecutorService)
             .environment(notificationService)
+            .environment(knowledgeBaseStore)
+            .environment(knowledgeGraphStore)
+            .environment(CustomPersonaStore.shared)
+            .environment(dataBackupCoordinator)
             .tint(accentColorManager.currentColor)
             .preferredColorScheme(themeManager.resolvedColorScheme)
             .task {

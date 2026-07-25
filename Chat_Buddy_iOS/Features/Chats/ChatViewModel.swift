@@ -146,7 +146,7 @@ enum ChatViewModelError: LocalizedError {
         }
 
         let config = context.apiConfigStore.activeConfig
-        let ragEnabled = StorageService.shared.get("knowledgeBase", default: KnowledgeBaseSettings(ragEnabled: false)).ragEnabled
+        let ragEnabled = StorageService.shared.get("knowledgeBase", default: KnowledgeBaseData(ragEnabled: false, docs: [])).ragEnabled
 
         do {
             let result = try await AIPipeline.run(
@@ -326,8 +326,4 @@ extension ChatViewModel {
 
         isTyping = false
     }
-}
-
-private struct KnowledgeBaseSettings: Codable {
-    var ragEnabled: Bool
 }

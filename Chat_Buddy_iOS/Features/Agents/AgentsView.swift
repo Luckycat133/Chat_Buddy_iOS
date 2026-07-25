@@ -2,19 +2,18 @@ import SwiftUI
 
 struct AgentsView: View {
     @Environment(LocalizationManager.self) private var localization
+    @Environment(CustomPersonaStore.self) private var customPersonaStore
 
     @State private var searchText = ""
     @State private var showCreateSheet = false
     @State private var editingPersona: Persona?
-    @State private var personaListVersion = 0
     @State private var personaToDelete: Persona?
 
     private var isZh: Bool { localization.uiLanguage.resolved == .zh }
 
     private var filteredAgents: [Persona] {
-        _ = personaListVersion
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let allAgents = PersonaStore.taskAgents + PersonaStore.customTaskAgents
+        let allAgents = PersonaStore.taskAgents + customPersonaStore.customTaskAgents
         return allAgents.filter { agent in
             guard !q.isEmpty else { return true }
             return agent.localizedName(language: localization.uiLanguage).localizedCaseInsensitiveContains(q)
@@ -109,14 +108,12 @@ struct AgentsView: View {
         }
         .sheet(isPresented: $showCreateSheet) {
             CustomPersonaEditorSheet(agentType: .taskSpecialist) { persona in
-                PersonaStore.upsertCustomPersona(persona)
-                personaListVersion += 1
+                customPersonaStore.upsert(persona)
             }
         }
         .sheet(item: $editingPersona) { persona in
             CustomPersonaEditorSheet(agentType: .taskSpecialist, editingPersona: persona) { updated in
-                PersonaStore.upsertCustomPersona(updated)
-                personaListVersion += 1
+                customPersonaStore.upsert(updated)
             }
         }
         .alert(localization.t("delete_confirm_title"), isPresented: .init(
@@ -125,8 +122,7 @@ struct AgentsView: View {
         )) {
             Button(localization.t("delete"), role: .destructive) {
                 if let persona = personaToDelete {
-                    PersonaStore.deleteCustomPersona(id: persona.id)
-                    personaListVersion += 1
+                    customPersonaStore.delete(id: persona.id)
                     personaToDelete = nil
                 }
             }
@@ -139,6 +135,6 @@ struct AgentsView: View {
     }
 
     private func isCustomAgent(_ persona: Persona) -> Bool {
-        PersonaStore.customTaskAgents.contains { $0.id == persona.id }
+        customPersonaStore.customTaskAgents.contains { $0.id == persona.id }
     }
 }

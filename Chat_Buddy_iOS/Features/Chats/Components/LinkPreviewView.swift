@@ -7,6 +7,8 @@ struct LinkPreviewView: View {
 
     var body: some View {
         Button {
+            guard let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else { return }
             UIApplication.shared.open(url)
         } label: {
             HStack(spacing: DSSpacing.sm) {
@@ -53,16 +55,25 @@ struct LinkPreviewView: View {
 
     private var faviconURL: URL? {
         guard let host = url.host else { return nil }
-        return URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64")
+        var components = URLComponents(string: "https://www.google.com/s2/favicons")
+        components?.queryItems = [
+            URLQueryItem(name: "domain", value: host),
+            URLQueryItem(name: "sz", value: "64")
+        ]
+        return components?.url
     }
 
     // MARK: - Static URL Detector
 
+    /// Cached URL-detection regex (compilation is expensive; reuse across calls).
+    private static let urlRegex: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: "https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+")
+    }()
+
     /// Extracts the first HTTP(S) URL from a text string.
     static func extractURL(from text: String) -> URL? {
-        let pattern = "https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+"
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+        guard let match = urlRegex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range, in: text) else {
             return nil
         }

@@ -10,6 +10,20 @@ struct DailyCheckInView: View {
 
     private var isZh: Bool { localization.uiLanguage.resolved == .zh }
 
+    /// Locale-specific short weekday formatter (e.g. "Mon" / "周一").
+    private static let weekdayEn: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        f.locale = Locale(identifier: "en_US")
+        return f
+    }()
+    private static let weekdayZh: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        f.locale = Locale(identifier: "zh_CN")
+        return f
+    }()
+
     var body: some View {
         NavigationStack {
             VStack(spacing: DSSpacing.xl) {
@@ -202,20 +216,14 @@ struct DailyCheckInView: View {
     // MARK: - Helpers
 
     private func last7Days() -> [String] {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        return (0..<7).reversed().compactMap { offset in
-            Calendar.current.date(byAdding: .day, value: -offset, to: Date()).map { fmt.string(from: $0) }
+        (0..<7).reversed().compactMap { offset in
+            Calendar.current.date(byAdding: .day, value: -offset, to: Date()).map { $0.dayKey }
         }
     }
 
     private func weekdayLabel(_ dateStr: String) -> String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        guard let date = fmt.date(from: dateStr) else { return "" }
-        let dayFmt = DateFormatter()
-        dayFmt.dateFormat = "EEE"
-        dayFmt.locale = Locale(identifier: isZh ? "zh_CN" : "en_US")
+        guard let date = DateFormatter.isoDay.date(from: dateStr) else { return "" }
+        let dayFmt = isZh ? Self.weekdayZh : Self.weekdayEn
         return dayFmt.string(from: date)
     }
 }

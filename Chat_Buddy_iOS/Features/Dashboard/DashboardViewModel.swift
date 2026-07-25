@@ -5,8 +5,7 @@ final class DashboardViewModel {
 
     /// Time-based greeting key for the current hour.
     var greetingKey: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
+        switch Date.currentHour {
         case 0..<5:  return "greeting_late_night"
         case 5..<12: return "greeting_morning"
         case 12..<18: return "greeting_afternoon"
@@ -16,14 +15,8 @@ final class DashboardViewModel {
 
     /// Formatted date string for the greeting header.
     var dateString: String {
-        Self.dateFormatter.string(from: Date())
+        DateFormatter.fullDate.string(from: Date())
     }
-
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .full
-        return f
-    }()
 
     /// Today's featured persona — stable within a calendar day.
     var todaysPick: Persona {
