@@ -1,14 +1,8 @@
+# This is a pure Swift/Xcode project: there is no package.json and no remote
+# Swift Package dependency, so GitHub Actions is the only ecosystem Dependabot
+# can actually resolve here.
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 5
-    groups:
-      all-npm:
-        patterns:
-          - "*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
