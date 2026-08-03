@@ -1,33 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private struct KnowledgeDocument: Identifiable, Codable {
-    var id: String
-    var name: String
-    var content: String
-    var size: Int
-    var createdAt: Date
-
-    init(id: String = UUID().uuidString, name: String, content: String, size: Int, createdAt: Date = Date()) {
-        self.id = id
-        self.name = name
-        self.content = content
-        self.size = size
-        self.createdAt = createdAt
-    }
-}
-
-private struct KnowledgeBaseData: Codable {
-    var ragEnabled: Bool
-    var docs: [KnowledgeDocument]
-
-    static let empty = KnowledgeBaseData(ragEnabled: true, docs: [])
-}
-
 struct KnowledgeBaseView: View {
     @Environment(LocalizationManager.self) private var localization
+    @Environment(KnowledgeBaseStore.self) private var store
 
-    @State private var data: KnowledgeBaseData = StorageService.shared.get("knowledgeBase", default: .empty)
     @State private var showImporter = false
     @State private var errorText: String?
 
@@ -37,11 +14,8 @@ struct KnowledgeBaseView: View {
         List {
             Section {
                 Toggle(isZh ? "启用 RAG" : "Enable RAG", isOn: Binding(
-                    get: { data.ragEnabled },
-                    set: {
-                        data.ragEnabled = $0
-                        save()
-                    }
+                    get: { store.ragEnabled },
+                    set: { store.setRagEnabled($0) }
                 ))
             } footer: {
                 Text(isZh ? "启用后会优先使用知识库内容辅助回答。" : "When enabled, responses can prioritize knowledge-base context.")
@@ -54,11 +28,9 @@ struct KnowledgeBaseView: View {
                     Label(isZh ? "导入文档" : "Import Document", systemImage: "square.and.arrow.down")
                 }
 
-                if !data.docs.isEmpty {
+                if !store.documents.isEmpty {
                     Button(role: .destructive) {
-                        for doc in data.docs { RAGService.removeDocumentFromIndex(documentId: doc.id) }
-                        data.docs.removeAll()
-                        save()
+                        store.clearAll()
                     } label: {
                         Label(isZh ? "清空文档" : "Clear All", systemImage: "trash")
                     }
@@ -66,12 +38,12 @@ struct KnowledgeBaseView: View {
             }
 
             Section(isZh ? "文档" : "Documents") {
-                if data.docs.isEmpty {
+                if store.documents.isEmpty {
                     Text(isZh ? "暂无文档" : "No documents yet")
                         .font(DSTypography.caption1)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(data.docs) { doc in
+                    ForEach(store.documents) { doc in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(doc.name)
                                 .font(DSTypography.footnote.weight(.semibold))
@@ -90,9 +62,7 @@ struct KnowledgeBaseView: View {
                         .padding(.vertical, 2)
                         .swipeActions {
                             Button(role: .destructive) {
-                                RAGService.removeDocumentFromIndex(documentId: doc.id)
-                                data.docs.removeAll { $0.id == doc.id }
-                                save()
+                                store.deleteDocument(id: doc.id)
                             } label: {
                                 Label(isZh ? "删除" : "Delete", systemImage: "trash")
                             }
@@ -138,19 +108,11 @@ struct KnowledgeBaseView: View {
                 errorText = isZh ? "文档内容为空或编码不支持" : "Empty document or unsupported encoding"
                 return
             }
-            let doc = KnowledgeDocument(name: url.lastPathComponent, content: text, size: fileData.count)
-            data.docs.insert(doc, at: 0)
-            save()
-            // Index document for RAG search
-            RAGService.addDocumentToIndex(id: doc.id, name: doc.name, content: doc.content)
+            store.importDocument(name: url.lastPathComponent, content: text, size: fileData.count)
             errorText = nil
         } catch {
             errorText = error.localizedDescription
         }
-    }
-
-    private func save() {
-        StorageService.shared.set("knowledgeBase", value: data)
     }
 
     private func humanSize(_ bytes: Int) -> String {

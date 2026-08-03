@@ -2,21 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ExportImportView: View {
-    @Environment(AppState.self) private var appState
     @Environment(LocalizationManager.self) private var localization
-    @Environment(ThemeManager.self) private var themeManager
-    @Environment(AccentColorManager.self) private var accentColorManager
-    @Environment(APIConfigStore.self) private var configStore
-    @Environment(ChatStore.self) private var chatStore
-    @Environment(AffinityService.self) private var affinityService
-    @Environment(BookmarkService.self) private var bookmarkService
-    @Environment(DraftService.self) private var draftService
-    @Environment(MomentsStore.self) private var momentsStore
-    @Environment(BackgroundStore.self) private var backgroundStore
-    @Environment(UserProfileStore.self) private var userProfileStore
-    @Environment(SocialService.self) private var socialService
-    @Environment(FriendService.self) private var friendService
-    @Environment(MemoryService.self) private var memoryService
+    @Environment(DataBackupCoordinator.self) private var backupCoordinator
 
     @State private var showExporter = false
     @State private var showImporter = false
@@ -51,7 +38,7 @@ struct ExportImportView: View {
                 } message: {
                     Text(localization.t("export_sensitive_warning"))
                 }
-                
+
                 Button {
                     exportData()
                 } label: {
@@ -115,14 +102,12 @@ struct ExportImportView: View {
     }
 
     private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: Date())
+        Date.todayDayKey
     }
 
     private func exportData() {
         do {
-            let data = try DataExporter.exportToData(configStore: configStore, includeSensitiveData: includeSensitiveData)
+            let data = try backupCoordinator.exportData(includeSensitiveData: includeSensitiveData)
             exportDocument = BackupDocument(data: data)
             showExporter = true
         } catch {
@@ -139,15 +124,7 @@ struct ExportImportView: View {
 
             do {
                 let data = try Data(contentsOf: url)
-                let count = try DataImporter.importBackup(
-                    from: data,
-                    configStore: configStore,
-                    localization: localization,
-                    themeManager: themeManager,
-                    accentColorManager: accentColorManager,
-                    appState: appState,
-                    stores: [chatStore, affinityService, bookmarkService, draftService, momentsStore, backgroundStore, userProfileStore, socialService, friendService, memoryService]
-                )
+                let count = try backupCoordinator.importBackup(from: data)
                 alertMessage = localization.t("import_success", params: ["count": "\(count)"])
                 showAlert = true
             } catch {

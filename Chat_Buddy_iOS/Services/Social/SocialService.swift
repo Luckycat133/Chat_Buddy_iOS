@@ -49,7 +49,7 @@ import Foundation
         let earned = 10 + bonus
         points += earned
 
-        let hour = Calendar.current.component(.hour, from: Date())
+        let hour = Date.currentHour
         if hour < 6 { unlockAchievement("early_bird") }
         if streakDays >= 7  { unlockAchievement("streak_7") }
         if streakDays >= 30 { unlockAchievement("streak_30") }
@@ -138,7 +138,7 @@ import Foundation
         let uniquePersonas = Set(chatStore.sessions.flatMap { $0.personaIds })
         if uniquePersonas.count >= 5 { unlockAchievement("social_butterfly") }
 
-        let hour = Calendar.current.component(.hour, from: Date())
+        let hour = Date.currentHour
         if hour < 4 { unlockAchievement("night_owl") }
 
         save()
@@ -187,8 +187,7 @@ import Foundation
     private func calculateStreak() -> Int {
         let sorted = checkInDates.sorted(by: >)
         guard !sorted.isEmpty else { return 0 }
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
+        let fmt = DateFormatter.isoDay
         var streak = 1
         for i in 1..<sorted.count {
             guard let d1 = fmt.date(from: sorted[i - 1]),

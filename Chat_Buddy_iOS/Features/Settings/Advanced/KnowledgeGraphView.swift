@@ -1,58 +1,9 @@
 import SwiftUI
 
-private struct KnowledgeNode: Identifiable, Codable {
-    var id: String
-    var name: String
-    var nameZh: String
-    var category: String
-    var description: String
-    var descriptionZh: String
-    var difficulty: Int
-    var custom: Bool
-
-    init(
-        id: String = UUID().uuidString,
-        name: String,
-        nameZh: String,
-        category: String,
-        description: String,
-        descriptionZh: String,
-        difficulty: Int = 1,
-        custom: Bool = false
-    ) {
-        self.id = id
-        self.name = name
-        self.nameZh = nameZh
-        self.category = category
-        self.description = description
-        self.descriptionZh = descriptionZh
-        self.difficulty = difficulty
-        self.custom = custom
-    }
-}
-
-/// A directed edge between two knowledge nodes.
-private struct KnowledgeEdge: Identifiable, Codable {
-    var id: String
-    var sourceId: String
-    var targetId: String
-    var label: String
-    var labelZh: String
-
-    init(id: String = UUID().uuidString, sourceId: String, targetId: String, label: String, labelZh: String = "") {
-        self.id = id
-        self.sourceId = sourceId
-        self.targetId = targetId
-        self.label = label
-        self.labelZh = labelZh
-    }
-}
-
 struct KnowledgeGraphView: View {
     @Environment(LocalizationManager.self) private var localization
+    @Environment(KnowledgeGraphStore.self) private var store
 
-    @State private var customNodes: [KnowledgeNode] = StorageService.shared.get("knowledgeGraph.custom", default: [])
-    @State private var edges: [KnowledgeEdge] = StorageService.shared.get("knowledgeGraph.edges", default: [])
     @State private var search = ""
     @State private var showAdd = false
     @State private var showAddEdge = false
@@ -77,7 +28,7 @@ struct KnowledgeGraphView: View {
     ]
 
     private var nodes: [KnowledgeNode] {
-        let all = builtins + customNodes
+        let all = builtins + store.customNodes
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return all }
         return all.filter {
@@ -95,7 +46,7 @@ struct KnowledgeGraphView: View {
         ]
     }
 
-    private var allEdges: [KnowledgeEdge] { builtinEdges + edges }
+    private var allEdges: [KnowledgeEdge] { builtinEdges + store.edges }
 
     var body: some View {
         List {
@@ -138,8 +89,7 @@ struct KnowledgeGraphView: View {
                         .swipeActions {
                             if !builtinEdges.contains(where: { $0.id == edge.id }) {
                                 Button(role: .destructive) {
-                                    edges.removeAll { $0.id == edge.id }
-                                    saveEdges()
+                                    store.deleteEdge(id: edge.id)
                                 } label: {
                                     Label(isZh ? "删除" : "Delete", systemImage: "trash")
                                 }
@@ -178,8 +128,7 @@ struct KnowledgeGraphView: View {
                         .swipeActions {
                             if node.custom {
                                 Button(role: .destructive) {
-                                    customNodes.removeAll { $0.id == node.id }
-                                    save()
+                                    store.deleteCustomNode(id: node.id)
                                 } label: {
                                     Label(isZh ? "删除" : "Delete", systemImage: "trash")
                                 }
@@ -217,17 +166,16 @@ struct KnowledgeGraphView: View {
                             let en = draftNameEn.trimmingCharacters(in: .whitespacesAndNewlines)
                             let zh = draftNameZh.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !en.isEmpty || !zh.isEmpty else { return }
-                            let node = KnowledgeNode(
+                            let category = draftCategory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? "custom"
+                                : draftCategory
+                            store.addCustomNode(
                                 name: en.isEmpty ? zh : en,
                                 nameZh: zh.isEmpty ? en : zh,
-                                category: draftCategory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "custom" : draftCategory,
+                                category: category,
                                 description: draftDescEn,
-                                descriptionZh: draftDescZh,
-                                difficulty: 1,
-                                custom: true
+                                descriptionZh: draftDescZh
                             )
-                            customNodes.insert(node, at: 0)
-                            save()
                             draftNameEn = ""
                             draftNameZh = ""
                             draftCategory = "custom"
@@ -252,28 +200,18 @@ struct KnowledgeGraphView: View {
                 let en = edgeLabelEn.trimmingCharacters(in: .whitespacesAndNewlines)
                 let zh = edgeLabelZh.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !edgeSourceId.isEmpty, !edgeTargetId.isEmpty else { return }
-                let edge = KnowledgeEdge(
+                store.addEdge(
                     sourceId: edgeSourceId,
                     targetId: edgeTargetId,
                     label: en.isEmpty ? zh : en,
                     labelZh: zh.isEmpty ? en : zh
                 )
-                edges.insert(edge, at: 0)
-                saveEdges()
                 edgeSourceId = ""
                 edgeTargetId = ""
                 edgeLabelEn = ""
                 edgeLabelZh = ""
             }
         }
-    }
-
-    private func save() {
-        StorageService.shared.set("knowledgeGraph.custom", value: customNodes)
-    }
-
-    private func saveEdges() {
-        StorageService.shared.set("knowledgeGraph.edges", value: edges)
     }
 }
 

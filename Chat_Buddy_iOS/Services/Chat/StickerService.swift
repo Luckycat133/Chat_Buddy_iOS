@@ -44,7 +44,9 @@ import SwiftUI
 
     private static let maxFavorites = 50
     private static let maxRecents = 20
-    private static let storageKey = "chat-buddy-stickers"
+    private static let storageKey = "stickers"
+    /// Legacy key from before the storage-prefix fix — migrated on first init.
+    private static let legacyStorageKey = "chat-buddy:chat-buddy-stickers"
 
     private struct StorageData: Codable {
         var favorites: [String]
@@ -54,6 +56,8 @@ import SwiftUI
     // MARK: - Init
 
     init() {
+        // Migrate legacy double-prefixed key to canonical form (idempotent).
+        StorageService.shared.migrate(legacyFullKey: Self.legacyStorageKey, to: Self.storageKey)
         let saved: StorageData = StorageService.shared.get(Self.storageKey, default: StorageData(favorites: [], recents: []))
         favorites = saved.favorites
         recents = saved.recents

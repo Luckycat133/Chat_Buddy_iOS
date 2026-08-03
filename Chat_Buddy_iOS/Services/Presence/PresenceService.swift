@@ -118,7 +118,7 @@ enum PresenceService {
         let cal = Calendar.current
         let now = Date()
         let components = cal.dateComponents(in: tz, from: now)
-        return components.hour ?? Calendar.current.component(.hour, from: now)
+        return components.hour ?? now.hour
     }
 
     private static func isInRange(hour: Int, range: TimeRange) -> Bool {

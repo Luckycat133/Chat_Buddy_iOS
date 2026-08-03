@@ -34,7 +34,10 @@ enum RAGService {
     private static let embeddingDim = 256
     private static let bm25K1 = 1.5
     private static let bm25B = 0.75
-    private static let storageKey = "chat-buddy-rag-index"
+    private static let storageKey = "ragIndex"
+    /// Legacy key from before the storage-prefix fix — migrated on first load.
+    private static let legacyStorageKey = "chat-buddy:chat-buddy-rag-index"
+    private static var didMigrate = false
 
     private static let stopWordsEn: Set<String> = [
         "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",

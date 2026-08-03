@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import os.log
 
 // MARK: - Background Task Identifiers
 // These MUST be registered in Info.plist under "Permitted background task scheduler identifiers"
@@ -17,6 +18,8 @@ enum MomentsBackgroundScheduler {
     private static var didRegister = false
     private static weak var sharedMomentsStore: MomentsStore?
     private static weak var sharedAPIConfigStore: APIConfigStore?
+
+    private static let logger = Logger.app(category: "MomentsBackgroundScheduler")
 
     static let momentsDataDidChange = Notification.Name("MomentsBackgroundScheduler.momentsDataDidChange")
 
@@ -55,7 +58,11 @@ enum MomentsBackgroundScheduler {
     static func scheduleMomentsRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: BGTaskIdentifier.momentsRefresh)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60) // 30 minutes
-        try? BGTaskScheduler.shared.submit(request)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            logger.error("Failed to schedule moments refresh: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     static func scheduleStoryEvents() {
@@ -63,7 +70,11 @@ enum MomentsBackgroundScheduler {
         request.earliestBeginDate = Date(timeIntervalSinceNow: 60 * 60) // 1 hour
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
-        try? BGTaskScheduler.shared.submit(request)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            logger.error("Failed to schedule story events: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     static func scheduleAll() {
@@ -166,7 +177,7 @@ enum MomentsBackgroundScheduler {
         let config = apiConfigStore.activeConfig
         guard config.isValid else { return }
 
-        let todayStr = ISO8601DateFormatter().string(from: Calendar.current.startOfDay(for: Date())).prefix(10).description
+        let todayStr = Calendar.current.startOfDay(for: Date()).dayKey
         guard await MainActor.run(body: { momentsStore.lastStoryEventDate != todayStr }) else { return }
 
         let events = MomentsService.todayEvents()

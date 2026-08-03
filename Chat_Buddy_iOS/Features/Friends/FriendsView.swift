@@ -4,19 +4,18 @@ struct FriendsView: View {
     @Environment(FriendService.self) private var friendService
     @Environment(ChatStore.self) private var chatStore
     @Environment(LocalizationManager.self) private var localization
+    @Environment(CustomPersonaStore.self) private var customPersonaStore
 
     @State private var searchText = ""
     @State private var selectedFilter: String = "all"
     @State private var showCreateSheet = false
     @State private var editingPersona: Persona?
-    @State private var personaListVersion = 0
     @State private var personaToDelete: Persona?
 
     private var isZh: Bool { localization.uiLanguage.resolved == .zh }
 
     private var allPersonas: [Persona] {
-        _ = personaListVersion
-        return PersonaStore.socialCompanions + PersonaStore.customSocialCompanions
+        PersonaStore.socialCompanions + customPersonaStore.customSocialCompanions
     }
 
     private var filteredPersonas: [Persona] {
@@ -183,14 +182,12 @@ struct FriendsView: View {
         }
         .sheet(isPresented: $showCreateSheet) {
             CustomPersonaEditorSheet(agentType: .socialCompanion) { persona in
-                PersonaStore.upsertCustomPersona(persona)
-                personaListVersion += 1
+                customPersonaStore.upsert(persona)
             }
         }
         .sheet(item: $editingPersona) { persona in
             CustomPersonaEditorSheet(agentType: .socialCompanion, editingPersona: persona) { updated in
-                PersonaStore.upsertCustomPersona(updated)
-                personaListVersion += 1
+                customPersonaStore.upsert(updated)
             }
         }
         .alert(localization.t("delete_confirm_title"), isPresented: .init(
@@ -199,8 +196,7 @@ struct FriendsView: View {
         )) {
             Button(localization.t("delete"), role: .destructive) {
                 if let persona = personaToDelete {
-                    PersonaStore.deleteCustomPersona(id: persona.id)
-                    personaListVersion += 1
+                    customPersonaStore.delete(id: persona.id)
                     personaToDelete = nil
                 }
             }
@@ -230,6 +226,6 @@ struct FriendsView: View {
     }
 
     private func isCustomPersona(_ persona: Persona) -> Bool {
-        PersonaStore.customSocialCompanions.contains { $0.id == persona.id }
+        customPersonaStore.customSocialCompanions.contains { $0.id == persona.id }
     }
 }

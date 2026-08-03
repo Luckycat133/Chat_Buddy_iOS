@@ -29,14 +29,11 @@ actor AIClient: AIClientProtocol {
 
     private var apiClient: APIClient
     private var lastConfig: APIConfig = .default
-    private let decoder: JSONDecoder
-    private static let logger = Logger(subsystem: "com.chatbuddy", category: "AIClient")
+    private let decoder = JSONDecoder.iso8601
+    private static let logger = Logger.app(category: "AIClient")
 
     private init() {
         self.apiClient = APIClient(config: .default)
-        let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
-        self.decoder = dec
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {

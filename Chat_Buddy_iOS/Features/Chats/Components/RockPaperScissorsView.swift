@@ -182,7 +182,7 @@ struct RockPaperScissorsView: View {
     }
 
     private func resolveRound() {
-        let ai = Choice.allCases.randomElement()!
+        let ai = Choice.allCases.randomElement() ?? .rock
         aiChoice = ai
         round += 1
 

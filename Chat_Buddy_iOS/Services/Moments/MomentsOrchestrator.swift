@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 // MARK: - MomentsOrchestrating Protocol
 
@@ -19,6 +20,8 @@ final class MomentsOrchestrator: MomentsOrchestrating {
     private let commentDelayMax      = 90.0
     private let minPostCooldown      = 1_800.0
     private let maxPostCooldown      = 7_200.0
+
+    private static let logger = Logger.app(category: "MomentsOrchestrator")
 
     init(aiClient: AIClientProtocol = AIClient.shared) {
         self.aiClient = aiClient
@@ -115,7 +118,7 @@ final class MomentsOrchestrator: MomentsOrchestrating {
     private func checkStoryEvents(store: MomentsStore, config: APIConfig) async {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
-        let todayStr = ISO8601DateFormatter().string(from: today).prefix(10).description
+        let todayStr = today.dayKey
 
         guard store.lastStoryEventDate != todayStr else { return }
 
@@ -186,7 +189,7 @@ final class MomentsOrchestrator: MomentsOrchestrating {
             let response = try await aiClient.sendChatCompletion(messages: messages, config: config)
             return response.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
-            print("[MomentsOrchestrator] AI call failed: \(error)")
+            Self.logger.error("AI call failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }

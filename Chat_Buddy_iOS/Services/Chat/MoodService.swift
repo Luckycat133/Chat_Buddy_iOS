@@ -73,7 +73,7 @@ enum MoodService {
     /// Returns the current mood for a persona, stable within the same hour.
     /// Different personas resolve to different moods even at the same time.
     static func currentMood(for persona: Persona) -> Mood {
-        let hour = Calendar.current.component(.hour, from: Date())
+        let hour = Date.currentHour
         let candidates = timeCandidates(for: hour)
         // XOR with hour so the mood shifts when the hour changes
         let hash = abs(persona.id.hashValue ^ hour)

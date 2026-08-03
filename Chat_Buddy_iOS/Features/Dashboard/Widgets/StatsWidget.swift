@@ -4,12 +4,6 @@ struct StatsWidget: View {
     @Environment(LocalizationManager.self) private var localization
     @Environment(ChatStore.self) private var chatStore
 
-    private static let dayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
-
     /// Total visible messages across all sessions (user + AI, excludes system prompts).
     private var totalMessages: Int {
         chatStore.sessions.reduce(0) { $0 + $1.displayMessages.count }
@@ -23,7 +17,7 @@ struct StatsWidget: View {
     /// Consecutive calendar days (ending today) on which at least one message was sent.
     private var streakDays: Int {
         let calendar = Calendar.current
-        let fmt = Self.dayFormatter
+        let fmt = DateFormatter.isoDay
 
         var activeDays = Set<String>()
         for session in chatStore.sessions where !session.displayMessages.isEmpty {

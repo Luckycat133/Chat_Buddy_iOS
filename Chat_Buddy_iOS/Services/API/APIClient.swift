@@ -9,8 +9,8 @@ actor APIClient {
     private var maxRetries: Int
 
     private static let maxRetryDelay: TimeInterval = 10.0
-    private static let encoder = JSONEncoder()
-    private static let logger = Logger(subsystem: "com.chatbuddy", category: "APIClient")
+    private static let encoder = JSONEncoder.default
+    private static let logger = Logger.app(category: "APIClient")
 
     init(config: APIConfig) {
         let sessionConfig = URLSessionConfiguration.default

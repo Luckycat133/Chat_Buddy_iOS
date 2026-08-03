@@ -528,31 +528,17 @@ struct ChatView: View {
     private var exportText: String {
         var lines = [String]()
         lines.append("Chat with \(persona.localizedName(language: localization.uiLanguage))")
-        lines.append("Exported on \(Self.exportDateFormatter.string(from: Date()))")
+        lines.append("Exported on \(DateFormatter.mediumDate.string(from: Date()))")
         lines.append("")
         for msg in allMessages {
             let sender = msg.role == .user
                 ? "You"
                 : persona.localizedName(language: localization.uiLanguage)
-            let time = Self.exportTimeFormatter.string(from: msg.timestamp)
+            let time = DateFormatter.shortTime.string(from: msg.timestamp)
             lines.append("[\(time)] \(sender): \(msg.content)")
         }
         return lines.joined(separator: "\n")
     }
-
-    private static let exportDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .none
-        return f
-    }()
-
-    private static let exportTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .short
-        return f
-    }()
 
     // MARK: - Actions
 
