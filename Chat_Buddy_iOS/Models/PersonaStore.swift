@@ -29,7 +29,7 @@ enum PersonaStore {
     /// Built-in personas use a precomputed index for O(1) lookup; custom
     /// personas fall back to a linear scan of the provider's current value.
     private static let builtInIndex: [String: Persona] = Dictionary(
-        uniqueKeysWithValues: (socialCompanions + taskAgents).map { ($0.id, $0) },
+        (socialCompanions + taskAgents).map { ($0.id, $0) },
         uniquingKeysWith: { _, last in last }
     )
 
