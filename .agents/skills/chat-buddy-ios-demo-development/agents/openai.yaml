@@ -1,0 +1,5 @@
+interface:
+  display_name: "Chat Buddy iOS Demo"
+  short_description: "Build the native cloud-backed SwiftUI TestFlight client for Chat Buddy's human/AI social demo."
+policy:
+  allow_implicit_invocation: true
