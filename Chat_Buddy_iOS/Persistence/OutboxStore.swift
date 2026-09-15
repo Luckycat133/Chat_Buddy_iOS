@@ -66,11 +66,15 @@ public final class OutboxStore {
     }
 
     public func loadPending(accountId: String) -> [Mutation] {
+        // SwiftData #Predicate key paths cannot reference enum cases —
+        // capture the raw values as local constants instead.
+        let queuedState = State.queued.rawValue
+        let failedState = State.failed.rawValue
         let descriptor = FetchDescriptor<OutboxMutation>(
             predicate: #Predicate { row in
                 row.accountId == accountId
-                    && (row.state == State.queued.rawValue
-                        || row.state == State.failed.rawValue)
+                    && (row.state == queuedState
+                        || row.state == failedState)
             },
             sortBy: [SortDescriptor(\.createdAt)],
         )

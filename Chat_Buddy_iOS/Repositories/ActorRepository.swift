@@ -45,11 +45,12 @@ public actor ActorRepository {
     }
 
     public func fetchActor(id: String) async throws -> CachedActor {
-        if let cached = await MainActor.run({
+        let cached = await MainActor.run { () -> CachedActor? in
             (try? self.context.fetch(
                 FetchDescriptor<CachedActor>(predicate: #Predicate { $0.id == id })
             ).first)
-        }), let actor = cached {
+        }
+        if let actor = cached {
             // Refresh in background; return cache for snappy UI.
             Task { [weak self] in
                 guard let self else { return }
@@ -87,13 +88,13 @@ public actor ActorRepository {
             FetchDescriptor<CachedActor>(predicate: #Predicate { $0.id == dto.id })
         ).first
         if let existing {
-            existing?.socialGraphId = dto.socialGraphId
-            existing?.type = dto.type
-            existing?.publicName = dto.publicName
-            existing?.avatarAssetId = dto.avatarAssetId
-            existing?.templateId = dto.templateId
-            existing?.status = dto.status
-            existing?.updatedAt = Date()
+            existing.socialGraphId = dto.socialGraphId
+            existing.type = dto.type
+            existing.publicName = dto.publicName
+            existing.avatarAssetId = dto.avatarAssetId
+            existing.templateId = dto.templateId
+            existing.status = dto.status
+            existing.updatedAt = Date()
         } else {
             context.insert(
                 CachedActor(

@@ -239,7 +239,7 @@ public struct AnyCodableJSON: Codable, Sendable, Equatable {
 }
 
 extension JSONDecoder {
-    fileprivate static var iso8601WithFractional: JSONDecoder {
+    nonisolated fileprivate static var iso8601WithFractional: JSONDecoder {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601WithFractional
         return d

@@ -69,7 +69,7 @@ actor APIClient {
             let (data, response) = try await session.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw APIError.invalidResponse
+                throw LegacyAPIError.invalidResponse
             }
 
             if httpResponse.statusCode == 429 && retriesLeft > 0 {
@@ -91,12 +91,12 @@ actor APIClient {
 
             guard (200...299).contains(httpResponse.statusCode) else {
                 let body = String(data: data, encoding: .utf8) ?? ""
-                throw APIError.httpError(statusCode: httpResponse.statusCode, body: body)
+                throw LegacyAPIError.httpError(statusCode: httpResponse.statusCode, body: body)
             }
 
             return data
 
-        } catch let error as APIError {
+        } catch let error as LegacyAPIError {
             throw error
         } catch {
             if retriesLeft > 0 && !(error is CancellationError) {
@@ -105,23 +105,23 @@ actor APIClient {
                 try await Task.sleep(for: .seconds(waitTime))
                 return try await fetchWithRetry(request, retriesLeft: retriesLeft - 1, attempt: attempt + 1)
             }
-            throw APIError.networkError(error)
+            throw LegacyAPIError.networkError(error)
         }
     }
 
     private func buildURL(_ endpoint: String) throws -> URL {
         if endpoint.hasPrefix("http://") {
             Self.logger.warning("HTTP connection rejected for security: [REDACTED_ENDPOINT]")
-            throw APIError.validationError("HTTP connections are not allowed. Only HTTPS is permitted.")
+            throw LegacyAPIError.validationError("HTTP connections are not allowed. Only HTTPS is permitted.")
         }
 
         if endpoint.hasPrefix("https://") {
             guard let url = URL(string: endpoint) else {
-                throw APIError.invalidURL(endpoint)
+                throw LegacyAPIError.invalidURL(endpoint)
             }
 
             guard validateURL(url) else {
-                throw APIError.validationError("Invalid or suspicious URL rejected")
+                throw LegacyAPIError.validationError("Invalid or suspicious URL rejected")
             }
 
             return url
@@ -129,15 +129,15 @@ actor APIClient {
 
         guard baseURL.hasPrefix("https://") else {
             Self.logger.error("Base URL must use HTTPS")
-            throw APIError.validationError("Base URL must use HTTPS. HTTP is not allowed.")
+            throw LegacyAPIError.validationError("Base URL must use HTTPS. HTTP is not allowed.")
         }
 
         guard let url = URL(string: "\(baseURL)\(endpoint)") else {
-            throw APIError.invalidURL(endpoint)
+            throw LegacyAPIError.invalidURL(endpoint)
         }
 
         guard validateURL(url) else {
-            throw APIError.validationError("Invalid or suspicious URL rejected")
+            throw LegacyAPIError.validationError("Invalid or suspicious URL rejected")
         }
 
         return url
@@ -166,7 +166,7 @@ actor APIClient {
     }
 }
 
-enum APIError: LocalizedError {
+enum LegacyAPIError: LocalizedError {
     case invalidURL(String)
     case invalidResponse
     case httpError(statusCode: Int, body: String)

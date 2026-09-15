@@ -142,9 +142,10 @@ public actor ConversationRepository {
     }
 
     private func flushOne(accountId: String, idempotencyKey: String) async throws -> SendResult {
-        guard let entry = await MainActor.run({
+        let entry = await MainActor.run { () -> OutboxStore.Mutation? in
             self.outbox.loadPending(accountId: accountId).first(where: { $0.idempotencyKey == idempotencyKey })
-        }) else {
+        }
+        guard let entry = entry else {
             return SendResult(accepted: false, conflict: false, messageId: nil, sequence: nil)
         }
         await MainActor.run { self.outbox.markSending(id: entry.id) }

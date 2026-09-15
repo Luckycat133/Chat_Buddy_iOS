@@ -66,7 +66,7 @@ actor AIClient: AIClientProtocol {
             return try decode(ChatCompletionResponse.self, from: data)
         } catch {
             Self.logger.error("Decoding error: \(error.localizedDescription)")
-            throw APIError.decodingError(error)
+            throw LegacyAPIError.decodingError(error)
         }
     }
 }
