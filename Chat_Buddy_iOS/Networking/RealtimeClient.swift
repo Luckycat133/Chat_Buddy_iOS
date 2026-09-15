@@ -212,7 +212,7 @@ public struct AnyCodableJSON: Codable, Sendable, Equatable {
             return
         }
         let rawData = try JSONSerialization.data(
-            withJSONObject: try decodeValue(container: container),
+            withJSONObject: try Self.decodeValue(container: container),
             options: [.sortedKeys],
         )
         self.raw = String(data: rawData, encoding: .utf8) ?? "{}"
@@ -223,7 +223,7 @@ public struct AnyCodableJSON: Codable, Sendable, Equatable {
         try container.encode(raw)
     }
 
-    private func decodeValue(container: SingleValueDecodingContainer) throws -> Any {
+    private static func decodeValue(container: SingleValueDecodingContainer) throws -> Any {
         if let v = try? container.decode(Bool.self) { return v }
         if let v = try? container.decode(Int.self) { return v }
         if let v = try? container.decode(Double.self) { return v }
