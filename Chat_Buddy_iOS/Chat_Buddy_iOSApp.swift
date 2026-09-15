@@ -288,15 +288,18 @@ private struct DevSignInView: View {
 }
 
 private struct LegacyAppRoot: View {
-    @ObservedObject var legacy: AppState
-    @ObservedObject var localization: LocalizationManager
-    @ObservedObject var themeManager: ThemeManager
-    @ObservedObject var accentColorManager: AccentColorManager
-    @ObservedObject var chatStore: ChatStore
-    @ObservedObject var momentsStore: MomentsStore
-    @ObservedObject var draftService: DraftService
-    @ObservedObject var knowledgeBaseStore: KnowledgeBaseStore
-    @ObservedObject var knowledgeGraphStore: KnowledgeGraphStore
+    // These legacy stores use the Observation framework (@Observable), not
+    // ObservableObject — plain properties are tracked automatically when read
+    // in body; @ObservedObject requires ObservableObject conformance.
+    var legacy: AppState
+    var localization: LocalizationManager
+    var themeManager: ThemeManager
+    var accentColorManager: AccentColorManager
+    var chatStore: ChatStore
+    var momentsStore: MomentsStore
+    var draftService: DraftService
+    var knowledgeBaseStore: KnowledgeBaseStore
+    var knowledgeGraphStore: KnowledgeGraphStore
     let onSwitchToCloud: () -> Void
 
     var body: some View {
