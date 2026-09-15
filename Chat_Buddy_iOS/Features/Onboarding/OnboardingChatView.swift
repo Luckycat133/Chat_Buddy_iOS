@@ -48,7 +48,7 @@ public struct OnboardingChatView: View {
                         .foregroundStyle(.red)
                 }
                 ForEach(messages, id: \.id) { message in
-                    MessageBubble(message: message)
+                    OnboardingMessageBubble(message: message)
                 }
             }
             .padding()
@@ -142,7 +142,7 @@ public struct OnboardingChatView: View {
     }
 }
 
-private struct MessageBubble: View {
+private struct OnboardingMessageBubble: View {
     let message: RemoteMessageDTO
 
     // Shared with CloudChatView (see `RemoteMessageDTO.isFromHuman`).

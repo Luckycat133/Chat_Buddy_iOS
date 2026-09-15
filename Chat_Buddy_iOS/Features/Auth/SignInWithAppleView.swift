@@ -20,8 +20,23 @@ public struct SignInWithAppleView: View {
     public init() {}
 
     public var body: some View {
-        SignInWithAppleButton(.signIn, signInTap)
-            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+        SignInWithAppleButton(.signIn) { request in
+            request.requestedScopes = [.fullName, .email]
+        } onCompletion: { result in
+            switch result {
+            case .success(let authorization):
+                guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                    Task { @MainActor in self.error = "Unexpected credential type" }
+                    return
+                }
+                Task { await handle(credential: credential) }
+            case .failure(let failure):
+                Task { @MainActor in
+                    self.error = failure.localizedDescription
+                }
+            }
+        }
+        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
             .frame(height: 48)
             .accessibilityLabel("Sign in with Apple")
             .overlay(alignment: .bottom) {
@@ -32,23 +47,6 @@ public struct SignInWithAppleView: View {
                         .padding(.top, 8)
                 }
             }
-    }
-
-    private func signInTap() {
-        let request = ASAuthorizationAppleIDProvider().createRequest()
-        request.requestedScopes = [.fullName, .email]
-        let controller = ASAuthorizationController(authorizationRequests: [request])
-        controller.delegate = SignInWithAppleDelegate(
-            onCredential: { credential in
-                Task { await handle(credential: credential) }
-            },
-            onError: { error in
-                Task { @MainActor in
-                    self.error = error.localizedDescription
-                }
-            },
-        )
-        controller.performRequests()
     }
 
     private func handle(credential: ASAuthorizationAppleIDCredential) async {
@@ -124,38 +122,5 @@ extension CloudAppState {
         // `stage` has a private setter; onboarding flows transition via
         // the explicit gate on CloudAppState.
         transition(to: .onboarding)
-    }
-}
-
-/// ASAuthorizationController delegate wrapper. Bridges Apple callbacks
-/// into structured Swift continuations.
-private final class SignInWithAppleDelegate: NSObject, ASAuthorizationControllerDelegate {
-    private let onCredential: (ASAuthorizationAppleIDCredential) -> Void
-    private let onError: (Error) -> Void
-
-    init(
-        onCredential: @escaping (ASAuthorizationAppleIDCredential) -> Void,
-        onError: @escaping (Error) -> Void,
-    ) {
-        self.onCredential = onCredential
-        self.onError = onError
-    }
-
-    func authorizationController(
-        controller: ASAuthorizationController,
-        didCompleteWithAuthorization authorization: ASAuthorization,
-    ) {
-        if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
-            onCredential(credential)
-        } else {
-            onError(SignInError.missingIdentityToken)
-        }
-    }
-
-    func authorizationController(
-        controller: ASAuthorizationController,
-        didCompleteWithError error: Error,
-    ) {
-        onError(error)
     }
 }
