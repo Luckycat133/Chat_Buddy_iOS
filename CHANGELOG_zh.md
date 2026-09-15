@@ -7,6 +7,31 @@
 
 ---
 
+## [Unreleased] — 云端客户端基座（2026-09-15）
+
+> 按 demo-development skill 落地的 cloud-first 运行时：HTTP/鉴权/实时/SwiftData 同步基座。初稿由 MiniMax-M3 生成，经 glm-5.3-flash 审查修复（8 个编译级 + 9 个逻辑缺陷全部修复；全部 35 个改动文件 `swiftc -parse` 0 错误；Xcode 真编待补）。
+
+### 新增 — 云端运行时
+- **CloudAppState** — cloud-first 应用运行时（启动阶段、dev-signin、初始同步、realtime 接线），旧本地运行时经 `CBUseCloudRuntime` 保留作 fallback。
+- **网络层** — HTTP 客户端、`APIError` 稳定错误码 + 服务端错误信封、端点表、Keychain 存储的 `AuthSession`（access/refresh）、带断流检测与处理器注入的 `RealtimeClient`。
+- **持久层** — SwiftData 缓存（14 个 `@Model`）、`ModelContainerFactory`、`SyncCursorStore`、五状态幂等 `OutboxStore`、`LegacyImporter`。
+- **同步** — `SyncCoordinator` 游标分页有序同步（`hasMore` 递归），初始同步后与 realtime 断流时重放 outbox。
+- **仓库层** — Actor / Conversation / Moments 三个仓库，DTO↔缓存转换。
+- **能力层** — EventKit 日历确认流、天气/搜索、`ClientActionCoordinator` 结构化回传、推送路由（payload 不含敏感内容）、`DeepLinkRouter`（`chatbuddy://`）。
+
+### 新增 — UI
+- 云端会话列表/时间线/输入框、Moments 流（发布+评论）、Sign in with Apple 流程、开发登录、Mira 引导聊天、诊断页、我页。
+
+### 新增 — 测试
+- `OutboxStoreTests`、`CloudClientTests`、`SyncCursorCodecTests`。
+
+### 修复 — 审查补丁（编译级）
+- `self.cloud = = state` 笔误；重复 `init(conversationId:)`；全模块重复 `AppTab` 枚举（新变体改名 `CloudAppTab`）；`??` autoclosure 中的 `await`；`APIErrorCode.init(rawValue:)` 无限递归（改显式 switch 映射）；`ConversationListItem` 补 Identifiable；`MeTab` 跨 actor 异步取值；`private(set) stage` 赋值改走 `CloudAppState.transition(to:)`。
+
+### 修复 — 审查补丁（逻辑）
+- outbox flush 接通（原为空闭包）；realtime 事件/断流触发增量同步（原被丢弃）；`.offline` 状态不再被 bootstrap/dev-signin 覆盖；引导会话发现实现（发消息不再死路）；Moments 发布/评论输入绑定（原按钮空转）；统一 `isFromHuman`（原两套矛盾约定）；legacy 数据先导入后清除（登出不再删导入源）；推送注册改 `UIApplication.shared`；结构化回传改真 JSON（原双层编码）。
+- 清理死代码（`AppStateBox`、`_placeholder`）；人类消息气泡靠右对齐。
+
 ## [0.10.0] — 2026-03-30
 
 ### 新增 — T12–T16 Web↔iOS 功能对齐

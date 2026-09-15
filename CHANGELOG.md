@@ -7,6 +7,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased] — Cloud Client Foundation (2026-09-15)
+
+> Cloud-first runtime for the iOS app per the demo-development skill: HTTP/auth/realtime/SwiftData-sync foundation with audited fixes. Initial draft by MiniMax-M3, audited and fixed with glm-5.3-flash (8 compile-level + 9 logic defects fixed; all 35 touched files pass `swiftc -parse` with 0 errors; Xcode build still pending on this machine).
+
+### Added — Cloud Runtime
+- **CloudAppState** — cloud-first app runtime (boot stages, dev-signin, initial sync, realtime wiring) with legacy fallback preserved behind `CBUseCloudRuntime`.
+- **Networking** — HTTP client, `APIError` stable codes + server error envelope, endpoint table, Keychain-backed `AuthSession` (access/refresh), `RealtimeClient` with gap detection and handler injection.
+- **Persistence** — SwiftData cache (14 `@Model` types), `ModelContainerFactory`, `SyncCursorStore`, five-state `OutboxStore` with idempotency keys, `LegacyImporter`.
+- **Sync** — `SyncCoordinator` cursor-paginated ordered sync with `hasMore` recursion, outbox flush after initial sync and on realtime gaps.
+- **Repositories** — Actor / Conversation / Moments repositories over DTO↔cache translation.
+- **Capabilities** — EventKit calendar with confirmation flow, weather/search, `ClientActionCoordinator` structured result posting, push routing (no sensitive content in payloads), `DeepLinkRouter` (`chatbuddy://`).
+
+### Added — UI
+- Cloud chats root/list, chat timeline + composer, Moments feed with composer and comments, Sign in with Apple flow, dev sign-in, Mira onboarding chat, diagnostics page, Me tab.
+
+### Added — Tests
+- `OutboxStoreTests`, `CloudClientTests`, `SyncCursorCodecTests`.
+
+### Fixed — Audit Pass (compile-level)
+- `self.cloud = = state` typo; duplicate `init(conversationId:)`; module-wide duplicate `AppTab` enum (new variant renamed `CloudAppTab`); `await` inside `??` autoclosure; infinite-recursion `APIErrorCode.init(rawValue:)` (now explicit switch mapping); `ConversationListItem` Identifiable conformance; actor-isolated async access in `MeTab`; `private(set) stage` writes routed through `CloudAppState.transition(to:)`.
+
+### Fixed — Audit Pass (logic)
+- Outbox flush wired (was a no-op closure); realtime events/gaps trigger delta sync (was discarded); `.offline` stage no longer overwritten by bootstrap/dev-signin; onboarding conversation discovery implemented (send no longer dead-ends); Moments composer + comment input bound (buttons were no-ops); unified `isFromHuman` helper (was two contradictory conventions); legacy data now imported before erase (sign-out no longer deletes the import source); push registration via `UIApplication.shared`; structured results post real JSON (was double-encoded).
+- Dead code removed (`AppStateBox`, `_placeholder`); human chat bubbles right-aligned per platform convention.
+
 ## [0.10.0] — 2026-03-30
 
 ### Added — T12–T16 Web↔iOS Feature Parity

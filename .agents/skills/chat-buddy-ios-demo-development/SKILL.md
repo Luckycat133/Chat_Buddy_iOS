@@ -1,7 +1,6 @@
 ---
 name: chat-buddy-ios-demo-development
 description: Implement, refactor, review, and test the native Chat Buddy iOS TestFlight Demo as a cloud-backed SwiftUI social client. Use when working on Sign in with Apple, SwiftData cache, realtime chat, APNs proactive messages, human/AI contacts, mixed groups, Moments, friend requests, identity linking, EventKit calendar actions, weather/search UI, sync, privacy, export, or TestFlight acceptance.
-compatibility: Luckycat133/Chat_Buddy_iOS on main. Requires Xcode 26.2+, the Chat_Buddy_iOS scheme, an iOS 26 simulator/device, and access to the shared Chat Buddy cloud API for integration work.
 metadata:
   author: Luckycat133
   version: "2026-08-18-demo-v1"
