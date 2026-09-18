@@ -313,7 +313,7 @@ public struct ServerPayload: Codable, Sendable {
     public let data: Data
 
     public init(from decoder: Decoder) throws {
-        let raw = try JSONDecoder().decode(JSONValue.self, from: decoder)
+        let raw = try JSONValue(from: decoder)
         self.data = try JSONEncoder().encode(raw)
     }
 

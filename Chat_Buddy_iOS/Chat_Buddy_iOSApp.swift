@@ -60,7 +60,7 @@ struct Chat_Buddy_iOSApp: App {
     private var content: some View {
         if useCloudRuntime, let cloud {
             CloudAppRoot(cloud: cloud, legacy: legacy)
-                .environment(cloud)
+                .environmentObject(cloud)
                 .environment(localization)
                 .environment(themeManager)
                 .environment(accentColorManager)
