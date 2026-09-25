@@ -146,6 +146,14 @@ struct SettingsView: View {
                 Section(localization.t("api_config")) {
                     NavigationLink {
                         APIConfigView()
+                            .disabled(true)
+                            .overlay(alignment: .top) {
+                                if UserDefaults.standard.object(forKey: "CBUseCloudRuntime") as? Bool ?? true {
+                                    Text("Cloud runtime active — server hosts provider keys")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                     } label: {
                         SettingRow(
                             icon: "server.rack",

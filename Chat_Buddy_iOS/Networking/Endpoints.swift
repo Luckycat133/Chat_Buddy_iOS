@@ -66,6 +66,18 @@ public enum Endpoints {
         APIEndpoint(path: "/v1/actors/\(id)")
     }
 
+    // MARK: Relationships
+
+    public static let relationships = APIEndpoint(path: "/v1/relationships")
+
+    /// Delete contact / block counterpart per DOMAIN_ARCHITECTURE §4.7
+    /// states (requested|accepted|declined|deleted|blocked). REVERSIBLE
+    /// ASSUMPTION: route shape mirrors friend-request decision; the server
+    /// contract lists block under moderation but does not pin the route.
+    public static func relationshipDecision(id: String) -> APIEndpoint {
+        APIEndpoint(path: "/v1/relationships/\(id)/decision")
+    }
+
     // MARK: Conversations
 
     public static let conversations = APIEndpoint(path: "/v1/conversations")
@@ -99,6 +111,13 @@ public enum Endpoints {
         APIEndpoint(path: "/v1/friend-requests/\(id)/decision")
     }
 
+    // MARK: Media
+
+    /// Request a signed upload slot. REVERSIBLE ASSUMPTION: the contract
+    /// says Moments media uploads via a signed URL; the concrete route is
+    /// `/v1/media` returning `{ assetId, uploadUrl }`, then PUT bytes.
+    public static let media = APIEndpoint(path: "/v1/media")
+
     // MARK: Group invitations
 
     public static func invitationDecision(id: String) -> APIEndpoint {
@@ -107,11 +126,28 @@ public enum Endpoints {
 
     // MARK: Moments
 
-    public static let moments = APIEndpoint(path: "/v1/moments")
+    public static func moments(cursor: String? = nil, limit: Int? = nil) -> APIEndpoint {
+        var q: [String: String] = [:]
+        if let cursor { q["cursor"] = cursor }
+        if let limit { q["limit"] = "\(limit)" }
+        return APIEndpoint(path: "/v1/moments", query: q)
+    }
 
     public static func momentInteraction(id: String) -> APIEndpoint {
         APIEndpoint(path: "/v1/moments/\(id)/interactions")
     }
+
+    /// Delete own post (skill §15 feed requirements). REVERSIBLE
+    /// ASSUMPTION: DELETE on the moment resource.
+    public static func momentDelete(id: String) -> APIEndpoint {
+        APIEndpoint(path: "/v1/moments/\(id)")
+    }
+
+    // MARK: Legacy import
+
+    /// One-time normalized legacy import batch (skill §17). Never carries
+    /// API credentials — see `LegacyImportPayloadBuilder`.
+    public static let accountImport = APIEndpoint(path: "/v1/account/import")
 
     // MARK: Memory
 

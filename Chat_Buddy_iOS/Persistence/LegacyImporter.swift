@@ -67,6 +67,32 @@ public final class LegacyImporter {
         return snap.conversations + snap.messages + snap.moments + snap.memories + snap.contacts > 0
     }
 
+    /// Read the raw legacy payloads for import. Returns only the four
+    /// user-visible history keys; API credential keys are deliberately
+    /// never read here.
+    public func readLegacyPayloads() -> (
+        chatSessions: Data?, moments: Data?, memories: Data?, contacts: Data?,
+    ) {
+        (
+            defaults.data(forKey: "chat-buddy:chatSessions"),
+            defaults.data(forKey: "chat-buddy:moments"),
+            defaults.data(forKey: "chat-buddy:memories"),
+            defaults.data(forKey: "chat-buddy:friends.groups"),
+        )
+    }
+
+    /// Build the normalized upload batch. Structurally excludes
+    /// credentials via `LegacyImportPayloadBuilder.sanitized`.
+    public func buildImportBatch() -> LegacyImportPayloadBuilder.Batch {
+        let payloads = readLegacyPayloads()
+        return LegacyImportPayloadBuilder.build(
+            chatSessionsData: payloads.chatSessions,
+            momentsData: payloads.moments,
+            memoriesData: payloads.memories,
+            contactsData: payloads.contacts,
+        )
+    }
+
     /// Erase legacy keys after a successful import or an explicit "skip".
     ///
     /// CONTRACT: call this ONLY after the import flow has completed

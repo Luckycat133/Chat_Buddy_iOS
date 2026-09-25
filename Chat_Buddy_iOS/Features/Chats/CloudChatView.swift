@@ -1,19 +1,18 @@
 import SwiftUI
 import SwiftData
 
-/// Cloud-backed chat view per skill §"Chat UI".
+/// Cloud-backed chat view per skill §"Chat UI":
 ///
-///   - Replaces the legacy `ChatView` (which routes through `ChatStore`
-///     and `AIPipeline`) when the cloud runtime is enabled.
-///   - Uses `CloudChatViewModel` for sending/receiving and SwiftData
-///     cache for offline render.
-///   - Streaming AI messages arrive via `RealtimeClient`; the local
-///     placeholder is updated in place until the server message replaces
-///     it.
-///   - Composer never blocks while AI replies; rapid messages flow.
+///   - Optimistic local messages: rows appear instantly as `queued`.
+///   - The composer NEVER locks while an AI is responding; rapid
+///     consecutive sends flow as individual messages (server closes the
+///     burst — no local AI decisions).
+///   - Failed sends stay visible with a retry affordance.
+///   - Cache-first timeline; server refresh + realtime deltas reconcile.
 public struct CloudChatView: View {
     @StateObject private var viewModel: CloudChatViewModel
     @EnvironmentObject private var cloud: CloudAppState
+    @Environment(LocalizationManager.self) private var loc
 
     public let conversationId: String
 
@@ -30,13 +29,9 @@ public struct CloudChatView: View {
             Divider()
             composer
         }
-        // The view surfaces only the public name; private remark is
-        // never shown to other actors per skill §"Settled product decisions".
-        .navigationTitle("Chat")
+        .navigationTitle(viewModel.conversationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            // Bind to the live app state once the SwiftUI environment is
-            // wired, then load cached + remote messages.
             viewModel.bind(app: cloud)
             await viewModel.load()
         }
@@ -51,14 +46,16 @@ public struct CloudChatView: View {
                         Label(error, systemImage: "exclamationmark.bubble")
                             .foregroundStyle(.red)
                     }
-                    ForEach(viewModel.messages, id: \.id) { message in
-                        CloudMessageRow(message: message)
-                            .id(message.id)
+                    ForEach(viewModel.rows) { row in
+                        CloudMessageRow(row: row) {
+                            Task { await viewModel.retry(row: row) }
+                        }
+                        .id(row.id)
                     }
                 }
                 .padding()
             }
-            .onChange(of: viewModel.messages.last?.id) { _, newID in
+            .onChange(of: viewModel.rows.last?.id) { _, newID in
                 guard let newID else { return }
                 withAnimation { proxy.scrollTo(newID, anchor: .bottom) }
             }
@@ -69,20 +66,21 @@ public struct CloudChatView: View {
     private var composer: some View {
         HStack(spacing: 8) {
             TextField(
-                "Say something…",
+                loc.t("cloud_chat_composer_hint"),
                 text: $viewModel.draft,
                 axis: .vertical,
             )
             .textFieldStyle(.roundedBorder)
             .lineLimit(1...4)
-            .disabled(viewModel.sending)
+            // NOTE: never disabled by AI activity; only by nothing to send.
+            .accessibilityLabel(loc.t("cloud_chat_composer_a11y"))
             Button {
                 Task { await viewModel.send() }
             } label: {
                 Image(systemName: "paperplane.fill")
             }
-            .disabled(viewModel.draft.trimmingCharacters(in: .whitespaces).isEmpty || viewModel.sending)
-            .accessibilityLabel("Send")
+            .disabled(!viewModel.canSend)
+            .accessibilityLabel(loc.t("cloud_chat_send_a11y"))
         }
         .padding()
         .background(.thinMaterial)
@@ -90,23 +88,51 @@ public struct CloudChatView: View {
 }
 
 private struct CloudMessageRow: View {
-    let message: RemoteMessageDTO
+    let row: ChatRowModel
+    let onRetry: () -> Void
+    @Environment(LocalizationManager.self) private var loc
 
-    // Single source of truth for human-vs-character alignment, shared
-    // with OnboardingChatView (see `RemoteMessageDTO.isFromHuman`).
-    private var isHuman: Bool { message.isFromHuman }
+    private var isHuman: Bool { row.isFromHuman }
 
     var body: some View {
-        // Human messages hug the trailing (right) edge: leading Spacer.
-        HStack {
+        HStack(alignment: .bottom, spacing: 6) {
             if isHuman { Spacer() }
-            Text(message.content)
+            if !isHuman {
+                statusAccessory
+            }
+            Text(row.content)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(isHuman ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.15))
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-                .accessibilityLabel(Text("\(isHuman ? "You" : "Contact") said \(message.content)"))
+                .accessibilityLabel(
+                    Text("\(isHuman ? loc.t("cloud_chat_a11y_you") : loc.t("cloud_chat_a11y_contact")) \(row.content)"),
+                )
+            if isHuman {
+                statusAccessory
+            }
             if !isHuman { Spacer() }
+        }
+    }
+
+    /// Queued/failed markers live next to the sender's own bubbles only.
+    @ViewBuilder
+    private var statusAccessory: some View {
+        switch row.status {
+        case .delivered:
+            EmptyView()
+        case .queued, .sending:
+            Image(systemName: "clock")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(loc.t("cloud_chat_status_queued"))
+        case .failed, .conflict:
+            Button(action: onRetry) {
+                Image(systemName: "exclamationmark.arrow.circlepath")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
+            .accessibilityLabel(loc.t("cloud_chat_status_retry_a11y"))
         }
     }
 }

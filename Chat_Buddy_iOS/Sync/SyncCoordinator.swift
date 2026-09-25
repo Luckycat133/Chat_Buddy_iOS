@@ -10,7 +10,12 @@ import os
 ///   - incremental sync: upsert by server id, apply tombstones,
 ///     preserve pending local mutations, reconcile by idempotency key.
 ///   - never replace the entire local store from a stale snapshot.
+///
+/// Row application lives in `EventApplier` (§10) with the policy in
+/// `ConflictResolver`; this actor owns transport, cursor movement, and
+/// outbox reconciliation.
 public actor SyncCoordinator {
+
     public struct ServerEnvelope: Sendable, Codable {
         public let cursor: String
         public let upserts: [SyncUpsert]
@@ -18,16 +23,18 @@ public actor SyncCoordinator {
         public let serverTime: Date
         public let hasMore: Bool
 
-        public struct SyncUpsert: Sendable, Codable {
-            public let table: String
-            public let id: String
-            public let payload: ServerPayload
-        }
-
-        public struct SyncTombstone: Sendable, Codable {
-            public let table: String
-            public let id: String
-            public let deletedAt: Date
+        public init(
+            cursor: String,
+            upserts: [SyncUpsert],
+            tombstones: [SyncTombstone],
+            serverTime: Date,
+            hasMore: Bool,
+        ) {
+            self.cursor = cursor
+            self.upserts = upserts
+            self.tombstones = tombstones
+            self.serverTime = serverTime
+            self.hasMore = hasMore
         }
     }
 
@@ -77,244 +84,81 @@ public actor SyncCoordinator {
     }
 
     private func apply(envelope: ServerEnvelope, accountId: String) async throws {
-        try await MainActor.run {
-            try Self.applyEnvelope(envelope, in: context)
+        // Snapshot the pending idempotency keys BEFORE applying so
+        // ConflictResolver can protect optimistic work and reconcile
+        // rows the server already accepted (§10).
+        let pendingKeys = await MainActor.run { () -> Set<String> in
+            Set(outbox.loadUnsettled(accountId: accountId).map(\.idempotencyKey))
         }
+        let result = try await MainActor.run {
+            try EventApplier.apply(
+                envelope: envelope,
+                in: context,
+                pendingIdempotencyKeys: pendingKeys,
+            )
+        }
+        await reconcileOutbox(result.reconciledIdempotencyKeys, accountId: accountId)
         await writeCursor(accountId: accountId, cursor: envelope.cursor)
         if envelope.hasMore {
             try await runSync(accountId: accountId)
         }
     }
 
-    private static func applyEnvelope(_ envelope: ServerEnvelope, in context: ModelContext) throws {
-        for upsert in envelope.upserts {
-            switch upsert.table {
-            case "actors":
-                try upsertActor(upsert, in: context)
-            case "conversations":
-                try upsertConversation(upsert, in: context)
-            case "messages":
-                try upsertMessage(upsert, in: context)
-            case "moments":
-                try upsertMoment(upsert, in: context)
-            case "friend_requests":
-                try upsertFriendRequest(upsert, in: context)
-            case "relationships":
-                try upsertRelationship(upsert, in: context)
-            case "memory_items":
-                try upsertMemoryItem(upsert, in: context)
-            default:
-                // Unknown tables are not authoritative for the client yet;
-                // we still record the table for forward compatibility.
-                continue
+    /// Idempotency-key reconciliation: the server accepted an optimistic
+    /// mutation (its upsert carries our client idempotency key), so the
+    /// outbox row can move to `accepted` instead of waiting for a flush.
+    private func reconcileOutbox(_ keys: Set<String>, accountId: String) async {
+        guard !keys.isEmpty else { return }
+        await MainActor.run {
+            let pending = outbox.loadUnsettled(accountId: accountId)
+            for entry in pending where keys.contains(entry.idempotencyKey) {
+                outbox.markAccepted(id: entry.id)
             }
         }
-        for tomb in envelope.tombstones {
-            try recordTombstone(table: tomb.table, rowId: tomb.id, deletedAt: tomb.deletedAt, in: context)
-        }
-        try context.save()
-    }
-
-    private static func upsertActor(_ upsert: ServerEnvelope.SyncUpsert, in context: ModelContext) throws {
-        let dto = try JSONDecoder().decode(RemoteActorDTO.self, from: upsert.payload.data)
-        let existing = try context.fetch(
-            FetchDescriptor<CachedActor>(predicate: #Predicate { $0.id == upsert.id })
-        ).first
-        if let existing {
-            existing.publicName = dto.publicName
-            existing.avatarAssetId = dto.avatarAssetId
-            existing.status = dto.status
-            existing.updatedAt = Date()
-        } else {
-            context.insert(
-                CachedActor(
-                    id: dto.id,
-                    socialGraphId: dto.socialGraphId,
-                    type: dto.type,
-                    publicName: dto.publicName,
-                    avatarAssetId: dto.avatarAssetId,
-                    templateId: dto.templateId,
-                    status: dto.status,
-                    updatedAt: Date(),
-                ),
-            )
-        }
-    }
-
-    private static func upsertConversation(_ upsert: ServerEnvelope.SyncUpsert, in context: ModelContext) throws {
-        let dto = try JSONDecoder().decode(RemoteConversationDTO.self, from: upsert.payload.data)
-        if let existing = try context.fetch(
-            FetchDescriptor<CachedConversation>(predicate: #Predicate { $0.id == upsert.id })
-        ).first {
-            existing.publicName = dto.publicName
-            existing.status = dto.status
-        } else {
-            context.insert(
-                CachedConversation(
-                    id: dto.id,
-                    socialGraphId: dto.socialGraphId,
-                    type: dto.type,
-                    publicName: dto.publicName,
-                    createdByActorId: dto.createdByActorId,
-                    status: dto.status,
-                    createdAt: dto.createdAt,
-                ),
-            )
-        }
-    }
-
-    private static func upsertMessage(_ upsert: ServerEnvelope.SyncUpsert, in context: ModelContext) throws {
-        let dto = try JSONDecoder().decode(RemoteMessageDTO.self, from: upsert.payload.data)
-        if let existing = try context.fetch(
-            FetchDescriptor<CachedMessage>(predicate: #Predicate { $0.id == upsert.id })
-        ).first {
-            existing.content = dto.content
-            existing.status = dto.status
-            existing.deletedAt = dto.deletedAt
-        } else {
-            context.insert(
-                CachedMessage(
-                    id: dto.id,
-                    conversationId: dto.conversationId,
-                    senderActorId: dto.senderActorId,
-                    sequence: dto.sequence,
-                    clientIdempotencyKey: dto.clientIdempotencyKey,
-                    kind: dto.kind,
-                    content: dto.content,
-                    structuredPayload: dto.structuredPayload,
-                    replyToMessageId: dto.replyToMessageId,
-                    burstId: dto.burstId,
-                    status: dto.status,
-                    createdAt: dto.createdAt,
-                    deletedAt: dto.deletedAt,
-                ),
-            )
-        }
-    }
-
-    private static func upsertMoment(_ upsert: ServerEnvelope.SyncUpsert, in context: ModelContext) throws {
-        let dto = try JSONDecoder().decode(RemoteMomentDTO.self, from: upsert.payload.data)
-        if let existing = try context.fetch(
-            FetchDescriptor<CachedMoment>(predicate: #Predicate { $0.id == upsert.id })
-        ).first {
-            existing.content = dto.content
-            existing.audiencePolicy = dto.audiencePolicy
-            existing.deletedAt = dto.deletedAt
-        } else {
-            context.insert(
-                CachedMoment(
-                    id: dto.id,
-                    actorId: dto.actorId,
-                    socialGraphId: dto.socialGraphId,
-                    content: dto.content,
-                    audiencePolicy: dto.audiencePolicy,
-                    sourceEventId: dto.sourceEventId,
-                    createdAt: dto.createdAt,
-                    deletedAt: dto.deletedAt,
-                ),
-            )
-        }
-    }
-
-    private static func upsertFriendRequest(_ upsert: ServerEnvelope.SyncUpsert, in context: ModelContext) throws {
-        let dto = try JSONDecoder().decode(RemoteFriendRequestDTO.self, from: upsert.payload.data)
-        if let existing = try context.fetch(
-            FetchDescriptor<CachedFriendRequest>(predicate: #Predicate { $0.id == upsert.id })
-        ).first {
-            existing.status = dto.status
-            existing.note = dto.note
-        } else {
-            context.insert(
-                CachedFriendRequest(
-                    id: dto.id,
-                    senderActorId: dto.senderActorId,
-                    recipientActorId: dto.recipientActorId,
-                    status: dto.status,
-                    note: dto.note,
-                    createdAt: dto.createdAt,
-                ),
-            )
-        }
-    }
-
-    private static func upsertRelationship(_ upsert: ServerEnvelope.SyncUpsert, in context: ModelContext) throws {
-        let dto = try JSONDecoder().decode(RemoteRelationshipDTO.self, from: upsert.payload.data)
-        if let existing = try context.fetch(
-            FetchDescriptor<CachedRelationship>(predicate: #Predicate { $0.id == upsert.id })
-        ).first {
-            existing.state = dto.state
-            existing.updatedAt = Date()
-        } else {
-            context.insert(
-                CachedRelationship(
-                    id: dto.id,
-                    actorAId: dto.actorAId,
-                    actorBId: dto.actorBId,
-                    state: dto.state,
-                    createdAt: dto.createdAt,
-                    updatedAt: dto.updatedAt,
-                ),
-            )
-        }
-    }
-
-    private static func upsertMemoryItem(_ upsert: ServerEnvelope.SyncUpsert, in context: ModelContext) throws {
-        let dto = try JSONDecoder().decode(RemoteMemoryItemDTO.self, from: upsert.payload.data)
-        if let existing = try context.fetch(
-            FetchDescriptor<CachedMemoryItem>(predicate: #Predicate { $0.id == upsert.id })
-        ).first {
-            existing.subjectiveInterpretation = dto.subjectiveInterpretation
-        } else {
-            context.insert(
-                CachedMemoryItem(
-                    id: dto.id,
-                    ownerActorId: dto.ownerActorId,
-                    relationshipId: dto.relationshipId,
-                    type: dto.type,
-                    objectiveFact: dto.objectiveFact,
-                    subjectiveInterpretation: dto.subjectiveInterpretation,
-                    confidence: dto.confidence,
-                    visibilityPolicy: dto.visibilityPolicy,
-                    sharePolicy: dto.sharePolicy,
-                    createdAt: dto.createdAt,
-                ),
-            )
-        }
-    }
-
-    private static func recordTombstone(
-        table: String,
-        rowId: String,
-        deletedAt: Date,
-        in context: ModelContext,
-    ) throws {
-        let existing = try context.fetch(
-            FetchDescriptor<CachedTombstone>(predicate: #Predicate { $0.table == table && $0.rowId == rowId })
-        ).first
-        if let existing {
-            existing.deletedAt = deletedAt
-        } else {
-            context.insert(CachedTombstone(table: table, rowId: rowId, deletedAt: deletedAt))
-        }
-    }
-
-    /// The cursor is opaque; we use the accountId label here purely for
-    /// the local cache key. The actual cursor body lives in the server's
-    /// `sync_cursor` table.
-    private func cursorKey(accountId: String) -> String {
-        return accountId
     }
 }
 
-// MARK: - DTOs
+// MARK: - Envelope row types
+
+/// One ordered upsert: `table` names the row family, `id` the server row
+/// identity, `payload` the raw JSON row (contract `sync.ts`).
+public struct SyncUpsert: Sendable, Codable, Equatable {
+    public let table: String
+    public let id: String
+    public let payload: ServerPayload
+
+    public init(table: String, id: String, payload: ServerPayload) {
+        self.table = table
+        self.id = id
+        self.payload = payload
+    }
+}
+
+public struct SyncTombstone: Sendable, Codable, Equatable {
+    public let table: String
+    public let id: String
+    public let deletedAt: Date
+
+    public init(table: String, id: String, deletedAt: Date) {
+        self.table = table
+        self.id = id
+        self.deletedAt = deletedAt
+    }
+}
 
 /// Wrapper around the server-side JSON payload for a sync upsert.
-public struct ServerPayload: Codable, Sendable {
+public struct ServerPayload: Codable, Sendable, Equatable {
     public let data: Data
 
     public init(from decoder: Decoder) throws {
         let raw = try JSONValue(from: decoder)
-        self.data = try JSONEncoder().encode(raw)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        self.data = try encoder.encode(raw)
+    }
+
+    public init(data: Data) {
+        self.data = data
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -323,7 +167,7 @@ public struct ServerPayload: Codable, Sendable {
     }
 }
 
-private enum JSONValue: Codable {
+enum JSONValue: Codable {
     case object([String: JSONValue])
     case array([JSONValue])
     case string(String)

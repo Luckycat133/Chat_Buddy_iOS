@@ -62,6 +62,19 @@ final class OutboxStoreTests: XCTestCase {
         XCTAssertEqual(outbox.loadPending(accountId: "user-1").count, 0)
     }
 
+    func testConflictStaysVisibleWithoutAutomaticReplay() throws {
+        let mutation = try outbox.enqueue(
+            accountId: "user-1",
+            method: "POST",
+            path: "/v1/conversations/c1/messages",
+            idempotencyKey: "conflict-1",
+            body: Data("{\"clientIdempotencyKey\":\"conflict-1\",\"content\":\"hello\",\"replyToMessageId\":null}".utf8),
+        )
+        outbox.markConflict(id: mutation.id)
+        XCTAssertEqual(outbox.loadPending(accountId: "user-1").count, 0)
+        XCTAssertEqual(outbox.pendingSnapshots(accountId: "user-1").first?.state, .conflict)
+    }
+
     func testClearAllRemovesEveryMutationForAccount() throws {
         _ = try outbox.enqueue(
             accountId: "user-1",

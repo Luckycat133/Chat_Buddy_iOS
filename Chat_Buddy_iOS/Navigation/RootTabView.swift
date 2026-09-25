@@ -10,8 +10,6 @@ struct RootTabView: View {
             ForEach(AppTab.allCases) { tab in
                 Tab(localization.t(tab.title), systemImage: tab.icon, value: tab) {
                     switch tab {
-                    case .dashboard:
-                        DashboardView()
                     case .chats:
                         ChatsView()
                     case .moments:

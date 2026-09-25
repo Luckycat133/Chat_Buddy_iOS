@@ -8,7 +8,7 @@ final class AppState {
         }
     }
 
-    var selectedTab: AppTab = .dashboard
+    var selectedTab: AppTab = .chats
 
     init() {
         self.hasCompletedOnboarding = StorageService.shared.get("hasCompletedOnboarding", default: false)

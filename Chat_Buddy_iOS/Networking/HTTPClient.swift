@@ -20,6 +20,13 @@ public actor HTTPClient {
     private let encoder: JSONEncoder
     private let logger = CloudLogger.auth
 
+    /// Invoked once on a 401 before a single retry. The app state wires
+    /// this to the token-refresh flow (skill §"Authentication": token
+    /// refresh + multi-device revocation). When refresh fails, the handler
+    /// clears the session and routes to sign-in; the retry then fails with
+    /// the same 401, which is surfaced to the caller.
+    private var unauthorizedHandler: (@Sendable () async -> Void)?
+
     public init(
         environment: AppEnvironment,
         session: AuthSession,
@@ -34,6 +41,11 @@ public actor HTTPClient {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601WithFractional
         self.encoder = encoder
+    }
+
+    /// Install the 401 → refresh → retry-once hook. Idempotent.
+    public func setUnauthorizedHandler(_ handler: @escaping @Sendable () async -> Void) {
+        self.unauthorizedHandler = handler
     }
 
     /// Execute a typed GET.
@@ -64,6 +76,20 @@ public actor HTTPClient {
     }
 
     private func send<B: Encodable, T: Decodable>(
+        _ endpoint: APIEndpoint,
+        method: String,
+        body: B?,
+    ) async throws -> T {
+        do {
+            return try await perform(endpoint, method: method, body: body)
+        } catch let error as APIError where error.code == .unauthorized {
+            // Token refresh + retry exactly once — never a loop.
+            await unauthorizedHandler?()
+            return try await perform(endpoint, method: method, body: body)
+        }
+    }
+
+    private func perform<B: Encodable, T: Decodable>(
         _ endpoint: APIEndpoint,
         method: String,
         body: B?,

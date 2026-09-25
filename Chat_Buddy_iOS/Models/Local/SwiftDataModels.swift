@@ -114,6 +114,10 @@ public final class CachedMessage {
     public var burstId: String?
     public var status: String
     public var createdAt: Date
+    /// Server-side edit timestamp (contract message.ts `editedAt`).
+    /// Additive field: SwiftData lightweight migration fills `nil` for
+    /// existing rows.
+    public var editedAt: Date?
     public var deletedAt: Date?
 
     public init(
@@ -129,6 +133,7 @@ public final class CachedMessage {
         burstId: String?,
         status: String,
         createdAt: Date,
+        editedAt: Date? = nil,
         deletedAt: Date?,
     ) {
         self.id = id
@@ -143,6 +148,7 @@ public final class CachedMessage {
         self.burstId = burstId
         self.status = status
         self.createdAt = createdAt
+        self.editedAt = editedAt
         self.deletedAt = deletedAt
     }
 }
@@ -459,6 +465,22 @@ public final class OutboxMutation {
         self.attempts = attempts
         self.lastError = lastError
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+/// Device-local settings per skill §"Replace local authority with cache":
+/// small non-sensitive preferences live in SwiftData (NOT full legacy
+/// message/moment arrays — those are forbidden in cloud mode). Keychain
+/// keeps session secrets; UserDefaults keeps nothing authoritative here.
+@Model
+public final class CachedDeviceSetting {
+    @Attribute(.unique) public var key: String
+    public var value: String
+    public var updatedAt: Date
+
+    public init(key: String, value: String, updatedAt: Date) {
+        self.key = key
+        self.value = value
         self.updatedAt = updatedAt
     }
 }

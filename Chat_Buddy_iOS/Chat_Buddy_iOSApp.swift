@@ -59,7 +59,7 @@ struct Chat_Buddy_iOSApp: App {
     @ViewBuilder
     private var content: some View {
         if useCloudRuntime, let cloud {
-            CloudAppRoot(cloud: cloud, legacy: legacy)
+            CloudAppRoot(cloud: cloud)
                 .environmentObject(cloud)
                 .environment(localization)
                 .environment(themeManager)
@@ -124,12 +124,12 @@ struct Chat_Buddy_iOSApp: App {
 /// legacy Dashboard tab is removed entirely.
 private struct CloudAppRoot: View {
     @ObservedObject var cloud: CloudAppState
-    var legacy: AppState
+    @Environment(LocalizationManager.self) private var localization
 
     var body: some View {
         switch cloud.stage {
         case .loading:
-            ProgressView("Bootstrapping…")
+            ProgressView(localization.t("cloud_bootstrapping"))
         case .unauthenticated:
             DevSignInView(cloud: cloud)
         case .onboarding:
@@ -143,72 +143,24 @@ private struct CloudAppRoot: View {
 
 private struct ChatsTabHost: View {
     @ObservedObject var cloud: CloudAppState
-    @State private var selectedTab: CloudAppTab = .chats
+    @Environment(LocalizationManager.self) private var localization
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: $cloud.selectedTab) {
             ChatsRootView()
-                .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right") }
+                .tabItem { Label(localization.t("nav_chats"), systemImage: "bubble.left.and.bubble.right") }
                 .tag(CloudAppTab.chats)
-            LegacyContactsTab()
-                .tabItem { Label("Contacts", systemImage: "person.2") }
+            ContactsView()
+                .tabItem { Label(localization.t("nav_contacts"), systemImage: "person.2") }
                 .tag(CloudAppTab.contacts)
-            LegacyMomentsTab()
-                .tabItem { Label("Moments", systemImage: "globe") }
+            CloudMomentsView()
+                .tabItem { Label(localization.t("nav_moments"), systemImage: "globe") }
                 .tag(CloudAppTab.moments)
-            MeTab(cloud: cloud)
-                .tabItem { Label("Me", systemImage: "person.crop.circle") }
+            MeTabView(cloud: cloud)
+                .tabItem { Label(localization.t("nav_settings"), systemImage: "person.crop.circle") }
                 .tag(CloudAppTab.me)
         }
         .environmentObject(cloud)
-        .onChange(of: cloud.selectedTab) { _, newValue in
-            selectedTab = newValue
-        }
-    }
-}
-
-private struct LegacyContactsTab: View {
-    var body: some View {
-        NavigationStack {
-            Text("Contacts")
-                .navigationTitle("Contacts")
-        }
-    }
-}
-
-private struct LegacyMomentsTab: View {
-    var body: some View {
-        NavigationStack {
-            Text("Moments")
-                .navigationTitle("Moments")
-        }
-    }
-}
-
-private struct MeTab: View {
-    @ObservedObject var cloud: CloudAppState
-    // `currentAccountId()` is an async actor method; it cannot be read
-    // synchronously from `body`, so we load it into local state.
-    @State private var accountId: String?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Account") {
-                    if let accountId {
-                        Text("Account ID: \(accountId.prefix(8))…")
-                    }
-                    Button("Sign out", role: .destructive) {
-                        Task { await cloud.signOut() }
-                    }
-                }
-                Section("Diagnostics") {
-                    DiagnosticsLink(cloud: cloud)
-                }
-            }
-            .navigationTitle("Me")
-            .task { accountId = await cloud.auth.currentAccountId() }
-        }
     }
 }
 
@@ -225,29 +177,32 @@ private struct DiagnosticsLink: View {
 /// In-app diagnostics. Shows sync cursor, outbox count, environment,
 /// auth state. Hidden by default in production builds (controlled by
 /// `AppEnvironment.enableDiagnostics`); always visible in dev.
-private struct DiagnosticsView: View {
+/// Internal so `MeTabView` (own file) can navigate to it.
+struct DiagnosticsView: View {
     @ObservedObject var cloud: CloudAppState
+    @Environment(LocalizationManager.self) private var localization
 
     var body: some View {
         List {
-            Section("Environment") {
-                LabeledContent("Bundle", value: cloud.environment.bundleIdentifier)
-                LabeledContent("Build", value: cloud.environment.buildNumber)
-                LabeledContent("APNs", value: cloud.environment.apnsEnvironment.rawValue)
-                LabeledContent("API", value: cloud.environment.apiBaseURL.absoluteString)
+            Section(localization.t("cloud_diag_env")) {
+                LabeledContent(localization.t("cloud_diag_bundle"), value: cloud.environment.bundleIdentifier)
+                LabeledContent(localization.t("cloud_diag_build"), value: cloud.environment.buildNumber)
+                LabeledContent(localization.t("cloud_diag_apns"), value: cloud.environment.apnsEnvironment.rawValue)
+                LabeledContent(localization.t("cloud_diag_api"), value: cloud.environment.apiBaseURL.absoluteString)
             }
-            Section("Health") {
-                Button("Run health check") {
+            Section(localization.t("cloud_diag_health")) {
+                Button(localization.t("cloud_diag_run")) {
                     Task { _ = try? await cloud.http.sendRaw(APIEndpoint(path: "/healthz")) }
                 }
             }
         }
-        .navigationTitle("Diagnostics")
+        .navigationTitle(localization.t("cloud_me_diagnostics_detail"))
     }
 }
 
 private struct DevSignInView: View {
     @ObservedObject var cloud: CloudAppState
+    @Environment(LocalizationManager.self) private var localization
     @State private var displayName: String = "Demo User"
     @State private var error: String?
     @State private var inFlight = false
@@ -255,15 +210,15 @@ private struct DevSignInView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Sign in") {
-                    TextField("Display name", text: $displayName)
+                Section(localization.t("cloud_dev_signin_section")) {
+                    TextField(localization.t("cloud_dev_signin_name"), text: $displayName)
                     Button {
                         Task { await signIn() }
                     } label: {
-                        if inFlight { ProgressView() } else { Text("Sign in (dev)") }
+                        if inFlight { ProgressView() } else { Text(localization.t("cloud_dev_signin_action")) }
                     }
                     .disabled(inFlight)
-                    Text("Production builds use Sign in with Apple + magic link; this panel is dev-only.")
+                    Text(localization.t("cloud_dev_signin_note"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -271,7 +226,7 @@ private struct DevSignInView: View {
                     Section { Text(error).foregroundStyle(.red) }
                 }
             }
-            .navigationTitle("Welcome")
+            .navigationTitle(localization.t("cloud_dev_signin_title"))
         }
     }
 

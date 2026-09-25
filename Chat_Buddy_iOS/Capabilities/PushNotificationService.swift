@@ -67,6 +67,15 @@ public final class PushNotificationService: NSObject, UNUserNotificationCenterDe
         }
     }
 
+    /// Unregister push: remove the APNs registration locally. Server-side
+    /// device rows are invalidated by account deletion; this stops the
+    /// current device from receiving new pushes (skill §17).
+    public func unregister() async {
+        await MainActor.run {
+            UIApplication.shared.unregisterForRemoteNotifications()
+        }
+    }
+
     /// UNUserNotificationCenterDelegate: foreground presentation.
     public func userNotificationCenter(
         _ center: UNUserNotificationCenter,

@@ -21,6 +21,7 @@ public actor AuthSession {
     private var cachedActorId: String?
     private var cachedAccountId: String?
     private var cachedAccessExpiresAt: Date?
+    private var cachedAppleSubject: String?
     private let logger = CloudLogger.auth
 
     public init(
@@ -98,6 +99,22 @@ public actor AuthSession {
         }
     }
 
+    /// Rotating refresh tokens (DOMAIN_ARCHITECTURE §14): swap the stored
+    /// refresh material while keeping the rest of the session intact.
+    public func rotate(refreshToken newRefresh: String) async {
+        cachedRefreshToken = newRefresh
+        if let access = cachedAccessToken, let account = cachedAccountId,
+           let actor = cachedActorId, let expires = cachedAccessExpiresAt {
+            await persist(AuthTokens(
+                accessToken: access,
+                refreshToken: newRefresh,
+                accountId: account,
+                actorId: actor,
+                accessExpiresAt: expires,
+            ))
+        }
+    }
+
     public func clear() async {
         cachedAccessToken = nil
         cachedRefreshToken = nil
@@ -105,6 +122,42 @@ public actor AuthSession {
         cachedAccountId = nil
         cachedAccessExpiresAt = nil
         try? keychain.delete(account: accessAccount, service: service)
+        await clearAppleSubject()
+    }
+
+    // MARK: Apple subject (separate keychain item — additive, so an
+    // existing StoredSession payload keeps decoding across app updates).
+
+    public func storeAppleSubject(_ subject: String) async {
+        do {
+            try keychain.write(
+                account: appleSubjectAccount,
+                service: service,
+                value: AppleSubjectRecord(subject: subject),
+                accessControl: .afterFirstUnlockThisDeviceOnly,
+            )
+            cachedAppleSubject = subject
+        } catch {
+            logger.error("apple subject persist failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    public func activeAppleSubject() async -> String? {
+        if cachedAppleSubject == nil {
+            if let record = try? keychain.read(
+                account: appleSubjectAccount,
+                service: service,
+                as: AppleSubjectRecord.self,
+            ) {
+                cachedAppleSubject = record.subject
+            }
+        }
+        return cachedAppleSubject
+    }
+
+    public func clearAppleSubject() async {
+        cachedAppleSubject = nil
+        try? keychain.delete(account: appleSubjectAccount, service: service)
     }
 
     // MARK: Persistence
@@ -119,6 +172,14 @@ public actor AuthSession {
 
     private var accessAccount: String {
         "\(environment.bundleIdentifier).auth.session"
+    }
+
+    private var appleSubjectAccount: String {
+        "\(environment.bundleIdentifier).auth.appleSubject"
+    }
+
+    private struct AppleSubjectRecord: Codable {
+        let subject: String
     }
 
     private func load() async {

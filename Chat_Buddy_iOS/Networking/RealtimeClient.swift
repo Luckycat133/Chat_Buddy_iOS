@@ -34,13 +34,19 @@ public actor RealtimeClient {
     private var syncTrigger: @Sendable () async -> Void
     private let logger = CloudLogger.realtime
 
+    /// Bounded dedup + ordering control per §9 — no event is applied twice.
+    private var sequencer = RealtimeSequencer()
+
     private var task: URLSessionWebSocketTask?
-    private var lastEventId: String?
     private var backoff: TimeInterval = 0.5
     private let maxBackoff: TimeInterval = 30
     private var stateValue: State = .idle
     private var explicitPause: Bool = false
     private var continuation: Task<Void, Never>?
+    /// Client-initiated heartbeat; detects half-open connections the
+    /// receive loop would otherwise sit on forever.
+    private var heartbeat: Task<Void, Never>?
+    private static let heartbeatInterval: TimeInterval = 30
 
     public init(
         environment: AppEnvironment,
@@ -80,7 +86,7 @@ public actor RealtimeClient {
         var request = URLRequest(url: environment.realtimeURL)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
         request.setValue(environment.bundleIdentifier, forHTTPHeaderField: "x-client")
-        if let last = lastEventId {
+        if let last = sequencer.lastEventId {
             request.setValue(last, forHTTPHeaderField: "last-event-id")
         }
         let socket = URLSession.shared.webSocketTask(with: request)
@@ -91,6 +97,9 @@ public actor RealtimeClient {
         continuation = Task { [weak self] in
             await self?.receiveLoop()
         }
+        heartbeat = Task { [weak self] in
+            await self?.heartbeatLoop()
+        }
     }
 
     /// Pause without disconnecting (e.g., app background).
@@ -100,6 +109,8 @@ public actor RealtimeClient {
         task = nil
         continuation?.cancel()
         continuation = nil
+        heartbeat?.cancel()
+        heartbeat = nil
         stateValue = .idle
     }
 
@@ -115,12 +126,51 @@ public actor RealtimeClient {
         task = nil
         continuation?.cancel()
         continuation = nil
+        heartbeat?.cancel()
+        heartbeat = nil
         stateValue = .idle
     }
 
     /// Mark the last successfully applied event id for resume.
     public func markApplied(eventId: String) {
-        lastEventId = eventId
+        sequencer.seed(lastEventId: eventId)
+    }
+
+    /// Client-side heartbeat: sendPing on an interval. A failed ping means
+    /// the connection is dead; cancel the socket so the receive loop's
+    /// error path runs the bounded-backoff reconnect.
+    private func heartbeatLoop() async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: UInt64(Self.heartbeatInterval * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard let socket = task else { return }
+            await withCheckedContinuation { (resume: CheckedContinuation<Void, Never>) in
+                socket.sendPing { [weak self] error in
+                    if error != nil {
+                        Task { await self?.handleDeadConnection() }
+                    }
+                    resume()
+                }
+            }
+        }
+    }
+
+    private func handleDeadConnection() async {
+        guard task != nil else { return }
+        logger.notice("realtime heartbeat failed; reconnecting")
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
+        continuation?.cancel()
+        continuation = nil
+        heartbeat?.cancel()
+        heartbeat = nil
+        stateValue = .backoff
+        // The receive loop observes the cancelled socket and owns the
+        // bounded-backoff reconnect. Connecting here would bypass backoff
+        // and could race that loop into two live receive tasks.
     }
 
     private func receiveLoop() async {
@@ -142,6 +192,8 @@ public actor RealtimeClient {
                 logger.notice("realtime receive error: \(String(describing: error), privacy: .public)")
                 stateValue = .backoff
                 self.task = nil
+                heartbeat?.cancel()
+                heartbeat = nil
                 let delay = min(backoff * 2, maxBackoff)
                 backoff = max(delay, 0.5)
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -161,8 +213,13 @@ public actor RealtimeClient {
         }
         switch envelope {
         case .event(let event):
-            if event.id == lastEventId { return } // dedupe
-            lastEventId = event.id
+            // Ordered admission: duplicates and stale replays are dropped
+            // here so the applier never sees an event twice (§9).
+            let verdict = sequencer.admit(event.id)
+            guard verdict == .deliver else {
+                logger.notice("realtime event dropped: \(verdict == .duplicate ? "duplicate" : "stale", privacy: .public)")
+                return
+            }
             await eventHandler(event)
         case .gap:
             await syncTrigger()
