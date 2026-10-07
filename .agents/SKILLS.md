@@ -8,6 +8,7 @@ Load only the Skill whose trigger matches the current task. A Skill may be reuse
 
 | Skill | Use here for |
 |---|---|
+| `chat-buddy-ios-demo-development` | Product authority, existing cloud client, offline outbox, backup migration and TestFlight evidence |
 | `github-actions` | iOS CI workflow design and debugging |
 | `swift-concurrency` | Structured concurrency, actor isolation, Sendable, and async migration |
 | `swiftui-navigation` | NavigationStack, routes, deep links, and state restoration |

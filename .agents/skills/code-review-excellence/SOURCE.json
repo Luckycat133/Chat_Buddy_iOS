@@ -1,0 +1,21 @@
+{
+  "skill": "code-review-excellence",
+  "upstream": {
+    "source": "wshobson/agents",
+    "sourceType": "github",
+    "computedHash": "7437cac5798603b94ce1019fa701c659a3deddcfc8c482a3ac42b8bcb65f6d4e"
+  },
+  "local_revision": {
+    "id": "20261006-cross-client-compatibility",
+    "scope": "Client-neutral path/tool/reference correction; no product implementation changes.",
+    "files": [
+      {
+        "path": "SKILL.md",
+        "before_sha256": "a765bd62c6ee22eab0cb56e96b5a811b49a9b4dfc1f85a86776aa1d3d6e87532",
+        "after_sha256": "57754961a19838ba152d33ff5574d17e856860c78d9af74785231874e50d27b5",
+        "change": "Remove six nonexistent supporting resources while preserving the complete inline workflow."
+      }
+    ]
+  },
+  "note": "Retained lockfile source/computedHash is provenance, not a verified upstream commit or current package hash. Local content hashes are recorded separately."
+}

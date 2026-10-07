@@ -528,11 +528,6 @@ When author disagrees with your feedback:
 ✅ Approve after addressing required changes
 ```
 
-## Resources
+## Available material
 
-- **references/code-review-best-practices.md**: Comprehensive review guidelines
-- **references/common-bugs-checklist.md**: Language-specific bugs to watch for
-- **references/security-review-guide.md**: Security-focused review checklist
-- **assets/pr-review-template.md**: Standard review comment template
-- **assets/review-checklist.md**: Quick reference checklist
-- **scripts/pr-analyzer.py**: Analyze PR complexity and suggest reviewers
+Use the inline patterns above and the current repository’s tests and conventions. This installed package does not bundle the reference, asset, or analyzer files previously advertised here; do not attempt to run missing helper scripts.

@@ -223,3 +223,7 @@ A change is not done unless:
 - tests match [references/ACCEPTANCE.md](references/ACCEPTANCE.md)
 
 For commands and platform-specific definition of done, follow [references/IOS_IMPLEMENTATION.md](references/IOS_IMPLEMENTATION.md).
+
+## Current checkout and bounded validation
+
+Read [current checkout and migration evidence](references/CURRENT_CHECKOUT.md) when working across legacy storage, cloud sync, import/export or release claims. It routes existing test coverage and distinguishes the root documents' legacy map from the cloud product contract. Select acceptance scenarios relevant to the change; narrow documentation/tooling work does not trigger the full native/cloud release checklist.

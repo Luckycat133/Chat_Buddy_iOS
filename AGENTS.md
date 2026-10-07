@@ -1,5 +1,11 @@
 # AGENTS.md — Chat Buddy iOS
 
+## Current product and Skill entry (2026-10-03)
+
+For product behavior, cloud sync, offline mutations, backup/import or TestFlight work, first read `.agents/skills/chat-buddy-ios-demo-development/SKILL.md` and its current-checkout reference. Choose platform helpers through `.agents/SKILLS.md`.
+
+The native-port architecture, UserDefaults/direct-provider examples and Done tables below are a legacy implementation map, not the cloud demo contract or current acceptance evidence. Inspect current code and keep legacy data readable; do not restore local AI authority for the hosted demo or remove compatibility data to match a document. Simulator availability must be checked live. General build success does not establish user-visible, server or APNs behavior.
+
 This file provides guidance to Codex when working with this repository.
 
 ---
