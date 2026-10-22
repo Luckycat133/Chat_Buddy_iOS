@@ -7,7 +7,7 @@ import Foundation
 // `shared/contracts/enums.ts` (contract 2026-08-18-demo-v1); newer server
 // values decode as `.unknown(raw)` instead of failing the whole DTO.
 
-public enum RemoteActorType: Sendable, Equatable {
+public enum RemoteActorType: Sendable, Equatable, Hashable {
     case human
     case character
     case unknown(String)
@@ -35,7 +35,7 @@ public enum RemoteActorType: Sendable, Equatable {
     }
 }
 
-public enum RemoteConversationType: Sendable, Equatable {
+public enum RemoteConversationType: Sendable, Equatable, Hashable {
     case direct
     case group
     case hiddenAiDirect
@@ -60,7 +60,7 @@ public enum RemoteConversationType: Sendable, Equatable {
     }
 }
 
-public enum RemoteMessageKind: Sendable, Equatable {
+public enum RemoteMessageKind: Sendable, Equatable, Hashable {
     case text
     case image
     case system
