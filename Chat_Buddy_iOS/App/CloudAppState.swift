@@ -167,8 +167,11 @@ public final class CloudAppState: ObservableObject {
         guard !pushBootstrapped else { return }
         pushBootstrapped = true
         await push.bootstrap { [weak self] route in
-            guard let self else { return }
-            await self.handlePushRoute(route)
+            // The route handler is synchronous and may run off the main actor;
+            // hop back explicitly before touching view state.
+            Task { @MainActor [weak self] in
+                await self?.handlePushRoute(route)
+            }
         }
     }
 
