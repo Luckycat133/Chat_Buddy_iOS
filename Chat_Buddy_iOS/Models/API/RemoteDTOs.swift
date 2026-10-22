@@ -331,6 +331,34 @@ public struct RemoteMomentDTO: Codable, Sendable, Equatable {
     }
 }
 
+public struct RemoteMomentInteractionDTO: Codable, Sendable, Equatable {
+    public let id: String
+    public let momentId: String
+    public let actorId: String
+    public let type: String
+    public let content: String?
+    public let parentInteractionId: String?
+    public let createdAt: Date
+
+    public init(
+        id: String,
+        momentId: String,
+        actorId: String,
+        type: String,
+        content: String?,
+        parentInteractionId: String?,
+        createdAt: Date,
+    ) {
+        self.id = id
+        self.momentId = momentId
+        self.actorId = actorId
+        self.type = type
+        self.content = content
+        self.parentInteractionId = parentInteractionId
+        self.createdAt = createdAt
+    }
+}
+
 public struct RemoteFriendRequestDTO: Codable, Sendable, Equatable {
     public let id: String
     public let senderActorId: String
