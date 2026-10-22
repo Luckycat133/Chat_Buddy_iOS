@@ -72,7 +72,7 @@ public struct ChatsRootView: View {
     @ViewBuilder
     private var list: some View {
         if let error, conversations.isEmpty {
-            errorState
+            errorState(error)
         } else if filtered.isEmpty && conversations.isEmpty {
             emptyState
         } else {
@@ -88,11 +88,11 @@ public struct ChatsRootView: View {
         }
     }
 
-    private var errorState: some View {
+    private func errorState(_ message: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 36))
-            Text(error).multilineTextAlignment(.center)
+            Text(message).multilineTextAlignment(.center)
             Button(loc.t("cloud_retry")) {
                 Task { await deltaSyncAndReload() }
             }
