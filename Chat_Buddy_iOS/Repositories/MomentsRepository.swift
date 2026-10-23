@@ -333,7 +333,9 @@ public actor MomentsRepository {
 
     @MainActor
     private static func upsertInteraction(_ row: CachedMomentInteraction, in context: ModelContext) {
-        let existing = context.registeredObjects.compactMap { $0 as? CachedMomentInteraction }.first { $0.id == row.id }
+        let existing = try? context.fetch(
+            FetchDescriptor<CachedMomentInteraction>(),
+        ).first { $0.id == row.id }
         if existing == nil {
             context.insert(row)
         }

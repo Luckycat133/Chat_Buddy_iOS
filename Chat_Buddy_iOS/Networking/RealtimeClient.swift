@@ -147,12 +147,12 @@ public actor RealtimeClient {
                 return
             }
             guard let socket = task else { return }
-            await withCheckedContinuation { (resume: CheckedContinuation<Void, Never>) in
+            await withCheckedContinuation { continuation in
                 socket.sendPing { [weak self] error in
                     if error != nil {
                         Task { await self?.handleDeadConnection() }
                     }
-                    resume(returning: ())
+                    continuation.resume(returning: ())
                 }
             }
         }
