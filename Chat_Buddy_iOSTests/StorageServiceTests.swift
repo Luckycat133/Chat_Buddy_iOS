@@ -91,7 +91,7 @@ final class StorageServiceTests: XCTestCase {
     }
 
     func testNestedCodableRoundTrip() {
-        let session = ChatSession(personaId: "test-persona")
+        var session = ChatSession(personaId: "test-persona")
         session.messages.append(ChatMessage(role: .user, content: "Hello"))
         let poll = ChatPoll(question: "Q?", options: [ChatPollOption(text: "A"), ChatPollOption(text: "B")])
         session.polls.append(poll)
@@ -202,7 +202,7 @@ final class StorageServiceTests: XCTestCase {
     func testImportAllReturnsCount() {
         let data: [String: Data] = [
             "apiConfig": try! JSONEncoder().encode(APIConfig.default),
-            "backgrounds": try! JSONEncoder().encode([ChatBackground]())
+            "backgrounds": try! JSONEncoder().encode([ChatBackgroundPreset]())
         ]
         let count = storage.importAll(data)
         XCTAssertEqual(count, 2)
