@@ -152,7 +152,7 @@ public actor RealtimeClient {
                     if error != nil {
                         Task { await self?.handleDeadConnection() }
                     }
-                    resume()
+                    resume(returning: ())
                 }
             }
         }

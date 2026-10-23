@@ -19,7 +19,7 @@ public actor ContactsRepository {
     // MARK: Cache projection
 
     public func cachedProjection(myActorId: String) async -> ContactsProjection {
-        await MainActor.run { () -> ContactsProjection in
+        try await MainActor.run { () -> ContactsProjection in
             let requests = (try? self.context.fetch(FetchDescriptor<CachedFriendRequest>())) ?? []
             let relationships = (try? self.context.fetch(FetchDescriptor<CachedRelationship>())) ?? []
             let actors = (try? self.context.fetch(FetchDescriptor<CachedActor>())) ?? []
@@ -80,7 +80,7 @@ public actor ContactsRepository {
         // name or role. Request/relationship failures are accumulated but
         // do not prevent the other surfaces from merging.
         let actors = try await http.get(Endpoints.actors, as: ActorListResponse.self)
-        await MainActor.run {
+        try await MainActor.run {
             for dto in actors.items {
                 Self.upsertActor(dto, in: self.context)
             }
@@ -93,7 +93,7 @@ public actor ContactsRepository {
                 Endpoints.friendRequests,
                 as: FriendRequestListResponse.self,
             )
-            await MainActor.run {
+            try await MainActor.run {
                 for dto in requests.items {
                     Self.upsertRequest(dto, in: self.context)
                 }
@@ -107,7 +107,7 @@ public actor ContactsRepository {
                 Endpoints.relationships,
                 as: RelationshipListResponse.self,
             )
-            await MainActor.run {
+            try await MainActor.run {
                 for dto in relationships.items {
                     Self.upsertRelationship(dto, in: self.context)
                 }

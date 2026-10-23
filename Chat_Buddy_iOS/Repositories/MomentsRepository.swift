@@ -127,9 +127,7 @@ public actor MomentsRepository {
                     MomentItem.ReactionSummary(
                         kind: "reaction",
                         count: reactions.count,
-                        includesMe: reactions.values.contains { actorId in
-                            actorId.contains("00000000-")
-                        },
+                        includesMe: reactions.values.contains { $0.contains { $0.actorId.contains("00000000-") } },
                     ),
                 ],
                 comments: comments,
@@ -335,9 +333,7 @@ public actor MomentsRepository {
 
     @MainActor
     private static func upsertInteraction(_ row: CachedMomentInteraction, in context: ModelContext) {
-        let existing = try? context.fetch(
-            FetchDescriptor<CachedMomentInteraction>(predicate: #Predicate { $0.id == row.id }),
-        ).first
+        let existing = context.registeredObjects.compactMap { $0 as? CachedMomentInteraction }.first { $0.id == row.id }
         if existing == nil {
             context.insert(row)
         }
