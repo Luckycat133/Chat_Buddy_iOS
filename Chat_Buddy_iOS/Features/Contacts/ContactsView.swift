@@ -181,7 +181,7 @@ public struct ContactsView: View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 36))
-            Text(error).multilineTextAlignment(.center)
+            Text(error ?? "").multilineTextAlignment(.center)
             Button(loc.t("cloud_retry")) { Task { await refresh() } }
                 .buttonStyle(.borderedProminent)
         }
