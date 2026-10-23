@@ -8,7 +8,7 @@ final class DeviceSettingsStoreTests: XCTestCase {
     private var store: DeviceSettingsStore!
 
     override func setUp() async throws {
-        try super.setUp()
+        try await super.setUp()
         container = try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema)
         store = DeviceSettingsStore(context: ModelContext(container))
     }
@@ -42,7 +42,7 @@ final class DeviceSettingsStoreTests: XCTestCase {
     func testRemoveAndRemoveAll() {
         store.write(.lastSelectedTab, value: "chats")
         store.write(.legacyImportCompleted, value: "true")
-        store.remove(Key.lastSelectedTab.rawValue)
+        store.remove(DeviceSettingsStore.Key.lastSelectedTab.rawValue)
         XCTAssertNil(store.read(.lastSelectedTab))
         XCTAssertNotNil(store.read(.legacyImportCompleted))
         store.removeAll()

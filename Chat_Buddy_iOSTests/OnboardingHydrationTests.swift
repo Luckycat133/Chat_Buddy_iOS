@@ -14,7 +14,7 @@ final class OnboardingHydrationTests: XCTestCase {
     private var context: ModelContext!
 
     override func setUp() async throws {
-        try super.setUp()
+        try await super.setUp()
         container = try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema)
         context = ModelContext(container)
     }
