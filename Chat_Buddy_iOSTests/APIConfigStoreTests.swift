@@ -5,14 +5,14 @@ final class APIConfigStoreTests: XCTestCase {
 
     private var defaults: UserDefaults!
     private var storage: StorageService!
-    private var store: APIConfigStore!
+    private var store: TestableAPIConfigStore!
 
     override func setUp() {
         super.setUp()
         defaults = UserDefaults(suiteName: #function)!
         storage = StorageService(defaults: defaults)
         defaults.removePersistentDomain(forName: #function)
-        KeychainService.delete("api-key-active")
+        try KeychainService.delete("api-key-active")
         store = TestableAPIConfigStore(storage: storage)
     }
 
@@ -45,7 +45,7 @@ final class APIConfigStoreTests: XCTestCase {
     func testActiveConfigApiKeySavedToKeychain() {
         store.activeConfig.apiKey = "test-key-123"
         let keychainKey = "api-key-active"
-        let saved = KeychainService.get(keychainKey)
+        let saved = try KeychainService.get(keychainKey)
         XCTAssertEqual(saved, "test-key-123")
     }
 
@@ -71,7 +71,7 @@ final class APIConfigStoreTests: XCTestCase {
         store.activeConfig.apiKey = "secret-key"
         store.saveAsProfile(name: "Secure Profile")
         let keychainKey = "api-key-profile-\(store.profiles[0].id.uuidString)"
-        let saved = KeychainService.get(keychainKey)
+        let saved = try KeychainService.get(keychainKey)
         XCTAssertEqual(saved, "secret-key")
     }
 
@@ -86,7 +86,7 @@ final class APIConfigStoreTests: XCTestCase {
         store.activeConfig.apiKey = "original-key"
         store.saveAsProfile(name: "Test Profile")
         let profile = store.profiles[0]
-        KeychainService.set("api-key-profile-\(profile.id.uuidString)", value: "loaded-key")
+        try KeychainService.set("api-key-profile-\(profile.id.uuidString)", value: "loaded-key")
         store.activeConfig.apiKey = "changed-key"
         store.loadProfile(profile)
         XCTAssertEqual(store.activeConfig.model, "profile-model")
@@ -97,7 +97,7 @@ final class APIConfigStoreTests: XCTestCase {
         store.activeConfig = APIConfig(baseURL: "https://custom.com", apiKey: "old", model: "old-model", temperature: 0.5, timeout: 30, maxRetries: 2)
         store.saveAsProfile(name: "Custom")
         let profile = store.profiles[0]
-        KeychainService.set("api-key-profile-\(profile.id.uuidString)", value: "profile-api-key")
+        try KeychainService.set("api-key-profile-\(profile.id.uuidString)", value: "profile-api-key")
         store.activeConfig.apiKey = "different"
         store.loadProfile(profile)
         XCTAssertEqual(store.activeConfig.baseURL, "https://custom.com")
@@ -115,9 +115,9 @@ final class APIConfigStoreTests: XCTestCase {
         store.saveAsProfile(name: "To Delete")
         let profile = store.profiles[0]
         let keychainKey = "api-key-profile-\(profile.id.uuidString)"
-        _ = KeychainService.set(keychainKey, value: "sensitive")
+        _ = try KeychainService.set(keychainKey, value: "sensitive")
         store.deleteProfile(profile)
-        let remaining = KeychainService.get(keychainKey)
+        let remaining = try KeychainService.get(keychainKey)
         XCTAssertNil(remaining)
     }
 
@@ -136,7 +136,7 @@ final class APIConfigStoreTests: XCTestCase {
         store.deleteProfile(at: IndexSet(integersIn: 0..<2))
         for id in ids {
             let key = "api-key-profile-\(id)"
-            XCTAssertNil(KeychainService.get(key))
+            XCTAssertNil(try KeychainService.get(key))
         }
     }
 
@@ -156,7 +156,7 @@ final class APIConfigStoreTests: XCTestCase {
         store.saveAsProfile(name: "Keychain Test")
         let profile = store.profiles[0]
         let keychainKey = "api-key-profile-\(profile.id.uuidString)"
-        _ = KeychainService.set(keychainKey, value: "restored-key")
+        _ = try KeychainService.set(keychainKey, value: "restored-key")
         let freshStore = TestableAPIConfigStore(storage: storage)
         XCTAssertEqual(freshStore.activeConfig.apiKey, "")
         XCTAssertEqual(freshStore.profiles.first?.config.apiKey, "restored-key")
@@ -194,10 +194,10 @@ final class TestableAPIConfigStore {
     init(storage: StorageService) {
         self.storage = storage
         var config = storage.get("apiConfig", default: APIConfig.default)
-        config.apiKey = KeychainService.get(Self.activeKeyKey) ?? ""
+        config.apiKey = try KeychainService.get(Self.activeKeyKey) ?? ""
         var savedProfiles = storage.get("apiProfiles", default: [APIProfile]())
         for i in savedProfiles.indices {
-            savedProfiles[i].config.apiKey = KeychainService.get(Self.profileKeyKey(savedProfiles[i].id)) ?? ""
+            savedProfiles[i].config.apiKey = try KeychainService.get(Self.profileKeyKey(savedProfiles[i].id)) ?? ""
         }
         self.activeConfig = config
         self.profiles = savedProfiles
@@ -205,26 +205,26 @@ final class TestableAPIConfigStore {
 
     func saveAsProfile(name: String) {
         let profile = APIProfile(name: name, config: activeConfig)
-        KeychainService.set(Self.profileKeyKey(profile.id), value: activeConfig.apiKey)
+        try KeychainService.set(Self.profileKeyKey(profile.id), value: activeConfig.apiKey)
         profiles.append(profile)
         persistProfiles()
     }
 
     func loadProfile(_ profile: APIProfile) {
         var config = profile.config
-        config.apiKey = KeychainService.get(Self.profileKeyKey(profile.id)) ?? ""
+        config.apiKey = try KeychainService.get(Self.profileKeyKey(profile.id)) ?? ""
         activeConfig = config
     }
 
     func deleteProfile(_ profile: APIProfile) {
-        KeychainService.delete(Self.profileKeyKey(profile.id))
+        try KeychainService.delete(Self.profileKeyKey(profile.id))
         profiles.removeAll { $0.id == profile.id }
         persistProfiles()
     }
 
     func deleteProfile(at offsets: IndexSet) {
         for index in offsets {
-            KeychainService.delete(Self.profileKeyKey(profiles[index].id))
+            try KeychainService.delete(Self.profileKeyKey(profiles[index].id))
         }
         profiles.remove(atOffsets: offsets)
         persistProfiles()
