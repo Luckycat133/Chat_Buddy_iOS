@@ -61,39 +61,47 @@ extension DateFormatter {
 //
 // Centralise the three encoder/decoder configurations used across the project
 // so callers don't keep reinstantiating them with bespoke settings.
+//
+// Each access returns a **fresh instance** on purpose: JSONEncoder/JSONDecoder
+// are not thread-safe. Sharing one instance across threads corrupts their
+// internal state, which shows up much later as heap corruption
+// ("malloc: pointer being freed was not allocated"). Before this change
+// `JSONEncoder.default` was one process-wide singleton used by the main
+// thread, by `StorageService.setAsync`'s detached task and by the APIClient
+// actor's executor at the same time.
 
 extension JSONEncoder {
     /// Default encoder — no special configuration. Equivalent to `JSONEncoder()`.
-    static let `default` = JSONEncoder()
+    static var `default`: JSONEncoder { JSONEncoder() }
 
     /// Encoder with ISO-8601 date encoding strategy. Use for any payload that
     /// round-trips `Date` values across the wire or to disk in ISO format.
-    static let iso8601: JSONEncoder = {
+    static var iso8601: JSONEncoder {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         return e
-    }()
+    }
 
     /// Encoder with ISO-8601 dates plus stable, sorted object keys — used for
     /// backup/export files where deterministic output aids diffing.
-    static let iso8601Sorted: JSONEncoder = {
+    static var iso8601Sorted: JSONEncoder {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         e.outputFormatting = .sortedKeys
         return e
-    }()
+    }
 }
 
 extension JSONDecoder {
     /// Default decoder — no special configuration. Equivalent to `JSONDecoder()`.
-    static let `default` = JSONDecoder()
+    static var `default`: JSONDecoder { JSONDecoder() }
 
     /// Decoder with ISO-8601 date decoding strategy.
-    static let iso8601: JSONDecoder = {
+    static var iso8601: JSONDecoder {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         return d
-    }()
+    }
 }
 
 // MARK: - Logger Subsystem

@@ -9,7 +9,10 @@ actor APIClient {
     private var maxRetries: Int
 
     private static let maxRetryDelay: TimeInterval = 10.0
-    private static let encoder = JSONEncoder.default
+    /// Fresh instance per call — JSON coders are not thread-safe and this actor
+    /// runs on its own executor while the rest of the app encodes on the main
+    /// thread.
+    private static var encoder: JSONEncoder { JSONEncoder.default }
     private static let logger = Logger.app(category: "APIClient")
 
     init(config: APIConfig) {

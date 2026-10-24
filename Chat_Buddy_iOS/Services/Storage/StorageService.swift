@@ -1,12 +1,26 @@
 import Foundation
 import os.log
 
-final class StorageService {
+/// Persistence wrapper around `UserDefaults`.
+///
+/// `nonisolated`: this is a pure data wrapper with no UI state, so it must not
+/// inherit the project's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. Being
+/// MainActor-isolated had two consequences:
+/// ① its static `encoder`/`decoder`/`logger` could not be referenced from the
+///    `Sendable` closure inside `setAsync` (the compiler warned about it), and
+/// ② the deinit of an instance released off the main actor was rescheduled onto
+///    the actor's executor (`swift_task_deinitOnExecutorImpl`), which is the
+///    frame the CI crash report pointed at.
+nonisolated final class StorageService {
     static let shared = StorageService()
 
     private static let logger = Logger.app(category: "StorageService")
-    private static let encoder = JSONEncoder.default
-    private static let decoder = JSONDecoder.default
+
+    /// Fresh instance per call — JSON coders are not thread-safe, and this one
+    /// is reached from the main thread, from `setAsync`'s detached task and from
+    /// the APIClient actor's executor.
+    private static var encoder: JSONEncoder { JSONEncoder.default }
+    private static var decoder: JSONDecoder { JSONDecoder.default }
 
     enum ImportValidationError: LocalizedError {
         case keyNotAllowed(String)
