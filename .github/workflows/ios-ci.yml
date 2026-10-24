@@ -61,9 +61,20 @@ jobs:
         if: always()
         run: |
           set +e
-          echo "=== DiagnosticReports ==="
-          ls -1t ~/Library/Logs/DiagnosticReports/ 2>/dev/null | head -30
-          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -12); do
+          for dir in "$HOME/Library/Logs/DiagnosticReports" "$HOME/Library/Logs/DiagnosticReports/Retired"; do
+            echo "=== $dir ==="
+            ls -1t "$dir" 2>/dev/null | head -20
+            for f in $(ls -t "$dir"/*.ips 2>/dev/null | head -6); do
+              echo "----- $f -----"
+              cat "$f"
+            done
+          done
+          echo "=== xcresult attachments ==="
+          rm -rf /tmp/attachments
+          xcrun xcresulttool export attachments --path TestResults.xcresult --output-path /tmp/attachments 2>&1 | head -5
+          ls -1t /tmp/attachments 2>/dev/null | head -20
+          for f in $(ls -t /tmp/attachments/* 2>/dev/null | head -6); do
             echo "----- $f -----"
-            cat "$f"
+            head -c 120000 "$f"
+            echo
           done
