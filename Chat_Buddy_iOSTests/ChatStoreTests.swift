@@ -570,7 +570,16 @@ final class TestableChatStore: StoreReloading {
     }
 
     private func save() {
-        storage.setAsync("chatSessions", value: sessions)
+        // 用同步 set,不用 setAsync。
+        // setAsync 里的 detached Task 会捕获这个测试专属的 suite UserDefaults;
+        // Task 在后台 executor 上结束时连带把它析构,而 iOS 26 模拟器上
+        // "在后台线程析构一个 suite UserDefaults" 会以
+        // "pointer being freed was not allocated" 崩掉整个测试宿主
+        // (CI run 40051259251 里本文件 36 个用例全是这么崩的,
+        //  崩溃栈: swift_task_deinitOnExecutorImpl -> StorageService.__deallocating_deinit)。
+        // 生产代码只走 StorageService.shared + UserDefaults.standard,两者都不析构,
+        // 碰不到这条路径;测试也不需要异步落盘。
+        storage.set("chatSessions", value: sessions)
     }
 
     private func stableSort() {

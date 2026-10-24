@@ -184,8 +184,14 @@ final class APIConfigStoreTests: XCTestCase {
 // MARK: - Testable Subclass
 
 final class TestableAPIConfigStore {
-    var activeConfig: APIConfig
-    var profiles: [APIProfile]
+    // 与真实 APIConfigStore 一致:属性变化时立刻持久化
+    // (真实实现是 `didSet { persistConfig() }` / `didSet { persistProfiles() }`)。
+    var activeConfig: APIConfig {
+        didSet { persistConfig() }
+    }
+    var profiles: [APIProfile] {
+        didSet { persistProfiles() }
+    }
     private let storage: StorageService
 
     private static let activeKeyKey = "api-key-active"
@@ -207,7 +213,6 @@ final class TestableAPIConfigStore {
         let profile = APIProfile(name: name, config: activeConfig)
         try KeychainService.set(Self.profileKeyKey(profile.id), value: activeConfig.apiKey)
         profiles.append(profile)
-        persistProfiles()
     }
 
     func loadProfile(_ profile: APIProfile) throws {
@@ -219,7 +224,6 @@ final class TestableAPIConfigStore {
     func deleteProfile(_ profile: APIProfile) throws {
         try KeychainService.delete(Self.profileKeyKey(profile.id))
         profiles.removeAll { $0.id == profile.id }
-        persistProfiles()
     }
 
     func deleteProfile(at offsets: IndexSet) throws {
@@ -227,7 +231,12 @@ final class TestableAPIConfigStore {
             try KeychainService.delete(Self.profileKeyKey(profiles[index].id))
         }
         profiles.remove(atOffsets: offsets)
-        persistProfiles()
+    }
+
+    /// 与真实 APIConfigStore.persistConfig() 行为一致:配置写 UserDefaults,apiKey 写 Keychain。
+    private func persistConfig() {
+        storage.set("apiConfig", value: activeConfig)
+        try? KeychainService.set(Self.activeKeyKey, value: activeConfig.apiKey)
     }
 
     private func persistProfiles() {
