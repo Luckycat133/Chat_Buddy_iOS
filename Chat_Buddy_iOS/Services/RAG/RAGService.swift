@@ -81,9 +81,16 @@ enum RAGService {
                     chunks.append(current)
                     current = String(current.suffix(overlap))
                 }
-                let sentences = splitSentences(para)
+                // A single sentence can still exceed the limit (text without
+                // any sentence terminator). Fall back to word splitting for it,
+                // otherwise the whole paragraph ends up as one oversized chunk.
+                let pieces = splitSentences(para).flatMap { sentence -> [String] in
+                    sentence.count > chunkSize
+                        ? splitByWords(sentence, chunkSize: chunkSize)
+                        : [sentence]
+                }
                 var sentGroup = ""
-                for sent in sentences {
+                for sent in pieces {
                     if sentGroup.count + sent.count > chunkSize && !sentGroup.isEmpty {
                         chunks.append(sentGroup)
                         sentGroup = String(sentGroup.suffix(overlap))
@@ -117,6 +124,26 @@ enum RAGService {
             sentences.append(current.trimmingCharacters(in: .whitespaces))
         }
         return sentences
+    }
+
+    /// Split a sentence that is longer than `chunkSize` into word-sized pieces.
+    /// Used as the fallback for text with no sentence terminators.
+    private static func splitByWords(_ text: String, chunkSize: Int) -> [String] {
+        let words = text.split(separator: " ", omittingEmptySubsequences: true)
+        guard !words.isEmpty else { return [text] }
+        var pieces: [String] = []
+        var current = ""
+        for word in words {
+            let candidate = current.isEmpty ? String(word) : current + " " + word
+            if candidate.count > chunkSize && !current.isEmpty {
+                pieces.append(current)
+                current = String(word)
+            } else {
+                current = candidate
+            }
+        }
+        if !current.isEmpty { pieces.append(current) }
+        return pieces
     }
 
     // MARK: - Keyword Extraction

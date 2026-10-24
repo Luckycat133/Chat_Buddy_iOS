@@ -62,8 +62,8 @@ jobs:
         run: |
           set +e
           echo "=== DiagnosticReports ==="
-          ls -1t ~/Library/Logs/DiagnosticReports/ 2>/dev/null | head -20
-          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -3); do
+          ls -1t ~/Library/Logs/DiagnosticReports/ 2>/dev/null | head -30
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -12); do
             echo "----- $f -----"
             cat "$f"
           done

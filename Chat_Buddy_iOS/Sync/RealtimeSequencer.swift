@@ -12,7 +12,13 @@ import Foundation
 /// actor-isolated `RealtimeClient` call `admit`/`seed` without passing
 /// `inout` across the isolation boundary; all mutable state is guarded by
 /// `lock`, so the type is safely `@unchecked Sendable`.
-public final class RealtimeSequencer: @unchecked Sendable {
+///
+/// `nonisolated`: the project's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+/// would otherwise isolate this type to the main actor, which contradicts the
+/// design above (the compiler warned: "main actor-isolated conformance of
+/// 'RealtimeSequencer.Verdict' to 'Equatable' cannot be used in nonisolated
+/// context") and made the type's deinit run on the actor's executor.
+public nonisolated final class RealtimeSequencer: @unchecked Sendable {
     public enum Verdict: Sendable, Equatable {
         /// New event — deliver to the applier exactly once.
         case deliver

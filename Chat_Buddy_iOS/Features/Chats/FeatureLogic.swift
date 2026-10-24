@@ -250,6 +250,12 @@ public enum ContactsClassifier {
         var declined: [ContactsProjection.Entry] = []
 
         for request in requests {
+            // Only requests that involve me belong in Contacts. If the cache
+            // ever holds a request between two other actors it must not show
+            // up as an inbound/outbound entry of mine.
+            guard request.senderActorId == myActorId || request.recipientActorId == myActorId else {
+                continue
+            }
             let counterpart = request.senderActorId == myActorId
                 ? request.recipientActorId
                 : request.senderActorId
