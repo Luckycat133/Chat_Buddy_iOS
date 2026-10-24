@@ -7,8 +7,8 @@ final class APIConfigStoreTests: XCTestCase {
     private var storage: StorageService!
     private var store: TestableAPIConfigStore!
 
-    override func setUp() throws {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         defaults = UserDefaults(suiteName: #function)!
         storage = StorageService(defaults: defaults)
         defaults.removePersistentDomain(forName: #function)
