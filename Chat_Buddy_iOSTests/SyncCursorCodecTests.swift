@@ -43,10 +43,7 @@ final class SyncCursorCodecTests: XCTestCase {
 
     private func decode(_ raw: String) -> CursorState? {
         guard !raw.isEmpty,
-              let padded = raw
-                .replacingOccurrences(of: "-", with: "+")
-                .replacingOccurrences(of: "_", with: "/"),
-              let data = Data(base64Encoded: padding(padded)),
+              let data = Data(base64Encoded: padding(raw.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/"))),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let id = json["id"] as? String,
               let occurredAt = json["occurredAt"] as? String else {

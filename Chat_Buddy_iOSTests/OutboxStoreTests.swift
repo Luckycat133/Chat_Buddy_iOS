@@ -8,7 +8,7 @@ final class OutboxStoreTests: XCTestCase {
     private var outbox: OutboxStore!
 
     override func setUp() async throws {
-        try super.setUp()
+        try await super.setUp()
         container = try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema)
         outbox = OutboxStore(context: ModelContext(container))
     }

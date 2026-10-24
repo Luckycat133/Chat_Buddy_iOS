@@ -7,7 +7,7 @@ import Foundation
 // `shared/contracts/enums.ts` (contract 2026-08-18-demo-v1); newer server
 // values decode as `.unknown(raw)` instead of failing the whole DTO.
 
-public enum RemoteActorType: Sendable, Equatable {
+public enum RemoteActorType: Sendable, Equatable, Hashable {
     case human
     case character
     case unknown(String)
@@ -35,7 +35,7 @@ public enum RemoteActorType: Sendable, Equatable {
     }
 }
 
-public enum RemoteConversationType: Sendable, Equatable {
+public enum RemoteConversationType: Sendable, Equatable, Hashable {
     case direct
     case group
     case hiddenAiDirect
@@ -60,7 +60,7 @@ public enum RemoteConversationType: Sendable, Equatable {
     }
 }
 
-public enum RemoteMessageKind: Sendable, Equatable {
+public enum RemoteMessageKind: Sendable, Equatable, Hashable {
     case text
     case image
     case system
@@ -328,6 +328,34 @@ public struct RemoteMomentDTO: Codable, Sendable, Equatable {
         self.sourceEventId = sourceEventId
         self.createdAt = createdAt
         self.deletedAt = deletedAt
+    }
+}
+
+public struct RemoteMomentInteractionDTO: Codable, Sendable, Equatable {
+    public let id: String
+    public let momentId: String
+    public let actorId: String
+    public let type: String
+    public let content: String?
+    public let parentInteractionId: String?
+    public let createdAt: Date
+
+    public init(
+        id: String,
+        momentId: String,
+        actorId: String,
+        type: String,
+        content: String?,
+        parentInteractionId: String?,
+        createdAt: Date,
+    ) {
+        self.id = id
+        self.momentId = momentId
+        self.actorId = actorId
+        self.type = type
+        self.content = content
+        self.parentInteractionId = parentInteractionId
+        self.createdAt = createdAt
     }
 }
 

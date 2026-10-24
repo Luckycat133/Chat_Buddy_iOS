@@ -50,4 +50,31 @@ jobs:
             -scheme Chat_Buddy_iOS \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -only-testing:Chat_Buddy_iOSTests \
-            CODE_SIGNING_ALLOWED=NO
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY="-"
+
+      # Keychain 在未签名的 app 里一律返回 -34018 (errSecMissingEntitlement):
+      # entitlement 来自签名,不签名就没有。模拟器用 ad-hoc identity "-" 即可,
+      # 不需要开发者证书或描述文件,CI 上可用。
+      - name: Collect crash reports
+        if: always()
+        run: |
+          set +e
+          for dir in "$HOME/Library/Logs/DiagnosticReports" "$HOME/Library/Logs/DiagnosticReports/Retired"; do
+            echo "=== $dir ==="
+            ls -1t "$dir" 2>/dev/null | head -20
+            for f in $(ls -t "$dir"/*.ips 2>/dev/null | head -6); do
+              echo "----- $f -----"
+              cat "$f"
+            done
+          done
+          echo "=== xcresult attachments ==="
+          rm -rf /tmp/attachments
+          xcrun xcresulttool export attachments --path TestResults.xcresult --output-path /tmp/attachments 2>&1 | head -5
+          ls -1t /tmp/attachments 2>/dev/null | head -20
+          for f in $(ls -t /tmp/attachments/* 2>/dev/null | head -6); do
+            echo "----- $f -----"
+            head -c 120000 "$f"
+            echo
+          done

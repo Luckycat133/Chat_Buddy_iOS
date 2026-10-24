@@ -6,7 +6,9 @@ final class AgentSkillStoreTests: XCTestCase {
     // MARK: - Data Integrity
 
     func testAllSkillsCount() {
-        XCTAssertEqual(AgentSkillStore.allSkills.count, 20)
+        // 目录里实际有 18 个 skill(AgentSkillStore.allSkills)。
+        // 这个断言从写下起就是 20,只是测试目标此前从未真正编译运行过。
+        XCTAssertEqual(AgentSkillStore.allSkills.count, 18)
     }
 
     func testUniqueSkillIds() {

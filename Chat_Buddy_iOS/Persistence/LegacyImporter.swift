@@ -26,6 +26,17 @@ public final class LegacyImporter {
 
     private let defaults: UserDefaults
 
+    /// Non-isolated teardown on purpose.
+    ///
+    /// The project runs with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so
+    /// this type's deinit would otherwise be an *isolated* deinit: Swift
+    /// defers it onto the main actor's executor, and releasing the instance
+    /// from an async test frame then freed it twice
+    /// ("malloc: pointer being freed was not allocated", CI run 40057054236).
+    /// The type only reads `UserDefaults`, so there is nothing that needs the
+    /// main actor at teardown time.
+    nonisolated deinit {}
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }

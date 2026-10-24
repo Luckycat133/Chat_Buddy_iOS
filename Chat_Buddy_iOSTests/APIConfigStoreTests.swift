@@ -1,19 +1,19 @@
-import XCTest
+﻿import XCTest
 @testable import Chat_Buddy_iOS
 
 final class APIConfigStoreTests: XCTestCase {
 
     private var defaults: UserDefaults!
     private var storage: StorageService!
-    private var store: APIConfigStore!
+    private var store: TestableAPIConfigStore!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         defaults = UserDefaults(suiteName: #function)!
         storage = StorageService(defaults: defaults)
         defaults.removePersistentDomain(forName: #function)
-        KeychainService.delete("api-key-active")
-        store = TestableAPIConfigStore(storage: storage)
+        try KeychainService.delete("api-key-active")
+        store = try TestableAPIConfigStore(storage: storage)
     }
 
     override func tearDown() {
@@ -23,14 +23,14 @@ final class APIConfigStoreTests: XCTestCase {
 
     // MARK: - Initial State
 
-    func testInitialActiveConfigIsDefault() {
-        let freshStore = TestableAPIConfigStore(storage: storage)
+    func testInitialActiveConfigIsDefault() throws {
+        let freshStore = try TestableAPIConfigStore(storage: storage)
         XCTAssertEqual(freshStore.activeConfig.baseURL, APIConfig.default.baseURL)
         XCTAssertEqual(freshStore.activeConfig.model, APIConfig.default.model)
     }
 
-    func testInitialProfilesIsEmpty() {
-        let freshStore = TestableAPIConfigStore(storage: storage)
+    func testInitialProfilesIsEmpty() throws {
+        let freshStore = try TestableAPIConfigStore(storage: storage)
         XCTAssertTrue(freshStore.profiles.isEmpty)
     }
 
@@ -42,139 +42,139 @@ final class APIConfigStoreTests: XCTestCase {
         XCTAssertEqual(loaded?.model, "gpt-4")
     }
 
-    func testActiveConfigApiKeySavedToKeychain() {
+    func testActiveConfigApiKeySavedToKeychain() throws {
         store.activeConfig.apiKey = "test-key-123"
         let keychainKey = "api-key-active"
-        let saved = KeychainService.get(keychainKey)
+        let saved = try KeychainService.get(keychainKey)
         XCTAssertEqual(saved, "test-key-123")
     }
 
-    func testActiveConfigReloadedFromStorage() {
+    func testActiveConfigReloadedFromStorage() throws {
         store.activeConfig.model = "gpt-4o"
         store.activeConfig.apiKey = "reload-test-key"
-        let freshStore = TestableAPIConfigStore(storage: storage)
+        let freshStore = try TestableAPIConfigStore(storage: storage)
         XCTAssertEqual(freshStore.activeConfig.model, "gpt-4o")
         XCTAssertEqual(freshStore.activeConfig.apiKey, "reload-test-key")
     }
 
     // MARK: - Profile Management
 
-    func testSaveAsProfileCreatesProfile() {
+    func testSaveAsProfileCreatesProfile() throws {
         store.activeConfig.model = "custom-model"
         store.activeConfig.apiKey = "profile-key"
-        store.saveAsProfile(name: "My Profile")
+        try store.saveAsProfile(name: "My Profile")
         XCTAssertEqual(store.profiles.count, 1)
         XCTAssertEqual(store.profiles.first?.name, "My Profile")
     }
 
-    func testSaveAsProfileStoresApiKeyInKeychain() {
+    func testSaveAsProfileStoresApiKeyInKeychain() throws {
         store.activeConfig.apiKey = "secret-key"
-        store.saveAsProfile(name: "Secure Profile")
+        try store.saveAsProfile(name: "Secure Profile")
         let keychainKey = "api-key-profile-\(store.profiles[0].id.uuidString)"
-        let saved = KeychainService.get(keychainKey)
+        let saved = try KeychainService.get(keychainKey)
         XCTAssertEqual(saved, "secret-key")
     }
 
-    func testSaveAsProfileDoesNotAffectActiveConfig() {
+    func testSaveAsProfileDoesNotAffectActiveConfig() throws {
         let originalModel = store.activeConfig.model
-        store.saveAsProfile(name: "New Profile")
+        try store.saveAsProfile(name: "New Profile")
         XCTAssertEqual(store.activeConfig.model, originalModel)
     }
 
-    func testLoadProfileUpdatesActiveConfig() {
+    func testLoadProfileUpdatesActiveConfig() throws {
         store.activeConfig.model = "profile-model"
         store.activeConfig.apiKey = "original-key"
-        store.saveAsProfile(name: "Test Profile")
+        try store.saveAsProfile(name: "Test Profile")
         let profile = store.profiles[0]
-        KeychainService.set("api-key-profile-\(profile.id.uuidString)", value: "loaded-key")
+        try KeychainService.set("api-key-profile-\(profile.id.uuidString)", value: "loaded-key")
         store.activeConfig.apiKey = "changed-key"
-        store.loadProfile(profile)
+        try store.loadProfile(profile)
         XCTAssertEqual(store.activeConfig.model, "profile-model")
         XCTAssertEqual(store.activeConfig.apiKey, "loaded-key")
     }
 
-    func testLoadProfileMergesCorrectly() {
+    func testLoadProfileMergesCorrectly() throws {
         store.activeConfig = APIConfig(baseURL: "https://custom.com", apiKey: "old", model: "old-model", temperature: 0.5, timeout: 30, maxRetries: 2)
-        store.saveAsProfile(name: "Custom")
+        try store.saveAsProfile(name: "Custom")
         let profile = store.profiles[0]
-        KeychainService.set("api-key-profile-\(profile.id.uuidString)", value: "profile-api-key")
+        try KeychainService.set("api-key-profile-\(profile.id.uuidString)", value: "profile-api-key")
         store.activeConfig.apiKey = "different"
-        store.loadProfile(profile)
+        try store.loadProfile(profile)
         XCTAssertEqual(store.activeConfig.baseURL, "https://custom.com")
         XCTAssertEqual(store.activeConfig.apiKey, "profile-api-key")
     }
 
-    func testDeleteProfileRemovesFromList() {
-        store.saveAsProfile(name: "To Delete")
+    func testDeleteProfileRemovesFromList() throws {
+        try store.saveAsProfile(name: "To Delete")
         let profile = store.profiles[0]
-        store.deleteProfile(profile)
+        try store.deleteProfile(profile)
         XCTAssertTrue(store.profiles.isEmpty)
     }
 
-    func testDeleteProfileRemovesKeychainEntry() {
-        store.saveAsProfile(name: "To Delete")
+    func testDeleteProfileRemovesKeychainEntry() throws {
+        try store.saveAsProfile(name: "To Delete")
         let profile = store.profiles[0]
         let keychainKey = "api-key-profile-\(profile.id.uuidString)"
-        _ = KeychainService.set(keychainKey, value: "sensitive")
-        store.deleteProfile(profile)
-        let remaining = KeychainService.get(keychainKey)
+        _ = try KeychainService.set(keychainKey, value: "sensitive")
+        try store.deleteProfile(profile)
+        let remaining = try KeychainService.get(keychainKey)
         XCTAssertNil(remaining)
     }
 
-    func testDeleteProfileAtOffsets() {
-        store.saveAsProfile(name: "First")
-        store.saveAsProfile(name: "Second")
-        store.deleteProfile(at: IndexSet(integer: 0))
+    func testDeleteProfileAtOffsets() throws {
+        try store.saveAsProfile(name: "First")
+        try store.saveAsProfile(name: "Second")
+        try store.deleteProfile(at: IndexSet(integer: 0))
         XCTAssertEqual(store.profiles.count, 1)
         XCTAssertEqual(store.profiles.first?.name, "Second")
     }
 
-    func testDeleteProfileAtOffsetsRemovesAllKeychainEntries() {
-        store.saveAsProfile(name: "P1")
-        store.saveAsProfile(name: "P2")
+    func testDeleteProfileAtOffsetsRemovesAllKeychainEntries() throws {
+        try store.saveAsProfile(name: "P1")
+        try store.saveAsProfile(name: "P2")
         let ids = store.profiles.map { $0.id.uuidString }
-        store.deleteProfile(at: IndexSet(integersIn: 0..<2))
+        try store.deleteProfile(at: IndexSet(integersIn: 0..<2))
         for id in ids {
             let key = "api-key-profile-\(id)"
-            XCTAssertNil(KeychainService.get(key))
+            XCTAssertNil(try KeychainService.get(key))
         }
     }
 
     // MARK: - Reload from Storage
 
-    func testReloadFromStorageRestoresState() {
+    func testReloadFromStorageRestoresState() throws {
         store.activeConfig.model = "reloaded-model"
-        store.saveAsProfile(name: "Reload Profile")
+        try store.saveAsProfile(name: "Reload Profile")
         let profile = store.profiles[0]
-        let freshStore = TestableAPIConfigStore(storage: storage)
+        let freshStore = try TestableAPIConfigStore(storage: storage)
         XCTAssertEqual(freshStore.activeConfig.model, "reloaded-model")
         XCTAssertEqual(freshStore.profiles.count, 1)
         XCTAssertEqual(freshStore.profiles.first?.name, "Reload Profile")
     }
 
-    func testReloadFromStorageRestoresKeychainKeysForProfiles() {
-        store.saveAsProfile(name: "Keychain Test")
+    func testReloadFromStorageRestoresKeychainKeysForProfiles() throws {
+        try store.saveAsProfile(name: "Keychain Test")
         let profile = store.profiles[0]
         let keychainKey = "api-key-profile-\(profile.id.uuidString)"
-        _ = KeychainService.set(keychainKey, value: "restored-key")
-        let freshStore = TestableAPIConfigStore(storage: storage)
+        _ = try KeychainService.set(keychainKey, value: "restored-key")
+        let freshStore = try TestableAPIConfigStore(storage: storage)
         XCTAssertEqual(freshStore.activeConfig.apiKey, "")
         XCTAssertEqual(freshStore.profiles.first?.config.apiKey, "restored-key")
     }
 
     // MARK: - Profile withoutApiKey
 
-    func testProfileWithoutApiKeyMasksApiKey() {
+    func testProfileWithoutApiKeyMasksApiKey() throws {
         store.activeConfig.apiKey = "secret-api-key"
-        store.saveAsProfile(name: "Masked Profile")
+        try store.saveAsProfile(name: "Masked Profile")
         let masked = store.profiles[0].withoutApiKey
         XCTAssertEqual(masked.config.apiKey, "")
     }
 
-    func testProfileWithoutApiKeyPreservesOtherFields() {
+    func testProfileWithoutApiKeyPreservesOtherFields() throws {
         store.activeConfig.baseURL = "https://example.com"
         store.activeConfig.model = "example-model"
-        store.saveAsProfile(name: "Preserve Profile")
+        try store.saveAsProfile(name: "Preserve Profile")
         let masked = store.profiles[0].withoutApiKey
         XCTAssertEqual(masked.config.baseURL, "https://example.com")
         XCTAssertEqual(masked.config.model, "example-model")
@@ -184,53 +184,63 @@ final class APIConfigStoreTests: XCTestCase {
 // MARK: - Testable Subclass
 
 final class TestableAPIConfigStore {
-    var activeConfig: APIConfig
-    var profiles: [APIProfile]
+    // 与真实 APIConfigStore 一致:属性变化时立刻持久化
+    // (真实实现是 `didSet { persistConfig() }` / `didSet { persistProfiles() }`)。
+    var activeConfig: APIConfig {
+        didSet { persistConfig() }
+    }
+    var profiles: [APIProfile] {
+        didSet { persistProfiles() }
+    }
     private let storage: StorageService
 
     private static let activeKeyKey = "api-key-active"
     private static func profileKeyKey(_ id: UUID) -> String { "api-key-profile-\(id.uuidString)" }
 
-    init(storage: StorageService) {
+    init(storage: StorageService) throws {
         self.storage = storage
         var config = storage.get("apiConfig", default: APIConfig.default)
-        config.apiKey = KeychainService.get(Self.activeKeyKey) ?? ""
+        config.apiKey = try KeychainService.get(Self.activeKeyKey) ?? ""
         var savedProfiles = storage.get("apiProfiles", default: [APIProfile]())
         for i in savedProfiles.indices {
-            savedProfiles[i].config.apiKey = KeychainService.get(Self.profileKeyKey(savedProfiles[i].id)) ?? ""
+            savedProfiles[i].config.apiKey = try KeychainService.get(Self.profileKeyKey(savedProfiles[i].id)) ?? ""
         }
         self.activeConfig = config
         self.profiles = savedProfiles
     }
 
-    func saveAsProfile(name: String) {
+    func saveAsProfile(name: String) throws {
         let profile = APIProfile(name: name, config: activeConfig)
-        KeychainService.set(Self.profileKeyKey(profile.id), value: activeConfig.apiKey)
+        try KeychainService.set(Self.profileKeyKey(profile.id), value: activeConfig.apiKey)
         profiles.append(profile)
-        persistProfiles()
     }
 
-    func loadProfile(_ profile: APIProfile) {
+    func loadProfile(_ profile: APIProfile) throws {
         var config = profile.config
-        config.apiKey = KeychainService.get(Self.profileKeyKey(profile.id)) ?? ""
+        config.apiKey = try KeychainService.get(Self.profileKeyKey(profile.id)) ?? ""
         activeConfig = config
     }
 
-    func deleteProfile(_ profile: APIProfile) {
-        KeychainService.delete(Self.profileKeyKey(profile.id))
+    func deleteProfile(_ profile: APIProfile) throws {
+        try KeychainService.delete(Self.profileKeyKey(profile.id))
         profiles.removeAll { $0.id == profile.id }
-        persistProfiles()
     }
 
-    func deleteProfile(at offsets: IndexSet) {
+    func deleteProfile(at offsets: IndexSet) throws {
         for index in offsets {
-            KeychainService.delete(Self.profileKeyKey(profiles[index].id))
+            try KeychainService.delete(Self.profileKeyKey(profiles[index].id))
         }
         profiles.remove(atOffsets: offsets)
-        persistProfiles()
+    }
+
+    /// 与真实 APIConfigStore.persistConfig() 行为一致:配置写 UserDefaults,apiKey 写 Keychain。
+    private func persistConfig() {
+        storage.set("apiConfig", value: activeConfig)
+        try? KeychainService.set(Self.activeKeyKey, value: activeConfig.apiKey)
     }
 
     private func persistProfiles() {
         storage.set("apiProfiles", value: profiles)
     }
 }
+

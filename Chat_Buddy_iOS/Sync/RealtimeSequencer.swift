@@ -7,9 +7,18 @@ import Foundation
 ///     being re-applied (server ids are UUIDv7, lexicographically sortable).
 ///   - The latest delivered id seeds the reconnect `last-event-id` header.
 ///
-/// Extracted as a plain struct so the dedup/ordering policy is unit-testable
-/// without opening a socket.
-public struct RealtimeSequencer: Sendable {
+/// Extracted as a plain type so the dedup/ordering policy is unit-testable
+/// without opening a socket. A final class (rather than a struct) lets the
+/// actor-isolated `RealtimeClient` call `admit`/`seed` without passing
+/// `inout` across the isolation boundary; all mutable state is guarded by
+/// `lock`, so the type is safely `@unchecked Sendable`.
+///
+/// `nonisolated`: the project's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+/// would otherwise isolate this type to the main actor, which contradicts the
+/// design above (the compiler warned: "main actor-isolated conformance of
+/// 'RealtimeSequencer.Verdict' to 'Equatable' cannot be used in nonisolated
+/// context") and made the type's deinit run on the actor's executor.
+public nonisolated final class RealtimeSequencer: @unchecked Sendable {
     public enum Verdict: Sendable, Equatable {
         /// New event — deliver to the applier exactly once.
         case deliver
@@ -20,6 +29,7 @@ public struct RealtimeSequencer: Sendable {
         case stale
     }
 
+    private let lock = NSLock()
     private var seen: Set<String> = []
     private var ring: [String] = []
     private let capacity: Int
@@ -29,7 +39,9 @@ public struct RealtimeSequencer: Sendable {
         self.capacity = max(1, capacity)
     }
 
-    public mutating func admit(_ eventId: String) -> Verdict {
+    public func admit(_ eventId: String) -> Verdict {
+        lock.lock()
+        defer { lock.unlock() }
         if seen.contains(eventId) {
             return .duplicate
         }
@@ -50,7 +62,9 @@ public struct RealtimeSequencer: Sendable {
 
     /// Explicitly seed the newest known id (e.g. restored cursor at boot)
     /// so pre-cursor replays are dropped after a reconnect.
-    public mutating func seed(lastEventId: String) {
+    public func seed(lastEventId: String) {
+        lock.lock()
+        defer { lock.unlock() }
         guard self.lastEventId == nil || lastEventId > self.lastEventId! else { return }
         self.lastEventId = lastEventId
     }

@@ -40,6 +40,11 @@ public final class DeepLinkRouter: ObservableObject {
     @Published public var pending: PendingRoute?
     @Published public var selectedTab: CloudAppTab = .chats
 
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`
+    /// for the full story (isolated deinit + release from an async frame =
+    /// double free).
+    nonisolated deinit {}
+
     public init() {}
 
     /// Handle a URL or a push route.

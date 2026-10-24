@@ -12,6 +12,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		3E9A7C14B6D24F8E9A0B1C2D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 040926212F4B437F00DF857F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 040926282F4B437F00DF857F;
+			remoteInfo = Chat_Buddy_iOS;
+		};
 		D7FAADFDE77B478CC3833ADA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 040926212F4B437F00DF857F /* Project object */;
@@ -138,6 +145,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				4F0B8D25C7E31A9F0B1C2D3E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				815F2AA16BB8ADB0ABCA6FDE /* Chat_Buddy_iOSTests */,
@@ -257,6 +265,12 @@
 			name = Chat_Buddy_iOS;
 			target = 040926282F4B437F00DF857F /* Chat_Buddy_iOS */;
 			targetProxy = D7FAADFDE77B478CC3833ADA /* PBXContainerItemProxy */;
+		};
+		4F0B8D25C7E31A9F0B1C2D3E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Chat_Buddy_iOS;
+			target = 040926282F4B437F00DF857F /* Chat_Buddy_iOS */;
+			targetProxy = 3E9A7C14B6D24F8E9A0B1C2D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -487,6 +501,7 @@
 		BB60D2EA53F2C7BC6B07E6E4 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGNING_ALLOWED = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -495,6 +510,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphonesimulator;
 				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Chat_Buddy_iOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Chat_Buddy_iOS";
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -502,6 +518,7 @@
 		C59E56009141A53A73C34D39 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGNING_ALLOWED = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -510,6 +527,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphonesimulator;
 				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Chat_Buddy_iOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Chat_Buddy_iOS";
 			};
 			name = Debug;
 		};

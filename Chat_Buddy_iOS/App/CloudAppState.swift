@@ -60,6 +60,12 @@ public final class CloudAppState: ObservableObject {
 
     private let logger = CloudLogger.auth
 
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`
+    /// for the full story (isolated deinit + release from an async frame =
+    /// double free). The deinit only releases the sub-objects, none of which
+    /// needs the main actor to be torn down.
+    nonisolated deinit {}
+
     public init(
         environment: AppEnvironment = .resolve(),
         container: ModelContainer? = nil,
@@ -167,8 +173,11 @@ public final class CloudAppState: ObservableObject {
         guard !pushBootstrapped else { return }
         pushBootstrapped = true
         await push.bootstrap { [weak self] route in
-            guard let self else { return }
-            await self.handlePushRoute(route)
+            // The route handler is synchronous and may run off the main actor;
+            // hop back explicitly before touching view state.
+            Task { @MainActor [weak self] in
+                await self?.handlePushRoute(route)
+            }
         }
     }
 

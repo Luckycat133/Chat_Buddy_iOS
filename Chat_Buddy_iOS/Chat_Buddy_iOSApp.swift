@@ -27,6 +27,12 @@ struct Chat_Buddy_iOSApp: App {
         .object(forKey: "CBUseCloudRuntime") as? Bool ?? true
     @Environment(\.scenePhase) private var scenePhase
 
+    /// `XCTestConfigurationFilePath` only exists in the environment of a
+    /// process launched by XCTest, so it is a reliable "am I the test host?"
+    /// probe. It is absent in every normal app launch.
+    private static let isRunningUnitTests: Bool =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "ChatBuddy",
         category: "App"
@@ -85,6 +91,12 @@ struct Chat_Buddy_iOSApp: App {
     }
 
     private func bootstrapCloudIfNeeded() async {
+        // Hosted unit tests run inside this app's process. Booting the cloud
+        // runtime there means every test session also does keychain reads,
+        // auth reloads and network calls, which slows the suite down and can
+        // take the whole test host down with it. The cloud runtime has its
+        // own tests (CloudClientTests et al.) that exercise it directly.
+        guard !Self.isRunningUnitTests else { return }
         guard useCloudRuntime, cloud == nil else { return }
         do {
             let state = try CloudAppState()

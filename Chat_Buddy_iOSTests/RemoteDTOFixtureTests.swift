@@ -41,11 +41,17 @@ final class RemoteDTOFixtureTests: XCTestCase {
 
     func testStructuredPayloadNullAndStringPassThrough() throws {
         let base = """
-        {"id":"m1","conversationId":"c1","senderActorId":"00000000-0000-0000-0000-000000000001","sequence":1,"clientIdempotencyKey":"abcdefgh","kind":"text","content":"hi","structuredPayload":%@"],"replyToMessageId":null,"burstId":null,"status":"accepted","createdAt":"2026-08-18T12:00:00.000Z","editedAt":null,"deletedAt":null}
+        {"id":"m1","conversationId":"c1","senderActorId":"00000000-0000-0000-0000-000000000001","sequence":1,"clientIdempotencyKey":"abcdefgh","kind":"text","content":"hi","structuredPayload":null,"replyToMessageId":null,"burstId":null,"status":"accepted","createdAt":"2026-08-18T12:00:00.000Z","editedAt":null,"deletedAt":null}
         """
-        let nullJSON = base.replacingOccurrences(of: "%@]", with: "null}")
-        let dto = try makeDecoder().decode(RemoteMessageDTO.self, from: Data(nullJSON.utf8))
+        let dto = try makeDecoder().decode(RemoteMessageDTO.self, from: Data(base.utf8))
         XCTAssertNil(dto.structuredPayload)
+
+        // structuredPayload 是 String?(原始 JSON 文本),字符串原样透传。
+        let stringJSON = """
+        {"id":"m1","conversationId":"c1","senderActorId":"00000000-0000-0000-0000-000000000001","sequence":1,"clientIdempotencyKey":"abcdefgh","kind":"text","content":"hi","structuredPayload":"{\\"seats\\":2}","replyToMessageId":null,"burstId":null,"status":"accepted","createdAt":"2026-08-18T12:00:00.000Z","editedAt":null,"deletedAt":null}
+        """
+        let stringDTO = try makeDecoder().decode(RemoteMessageDTO.self, from: Data(stringJSON.utf8))
+        XCTAssertEqual(stringDTO.structuredPayload, "{\"seats\":2}")
     }
 
     // MARK: - Unknown enum fallback

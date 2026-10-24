@@ -91,7 +91,7 @@ final class StorageServiceTests: XCTestCase {
     }
 
     func testNestedCodableRoundTrip() {
-        let session = ChatSession(personaId: "test-persona")
+        var session = ChatSession(personaId: "test-persona")
         session.messages.append(ChatMessage(role: .user, content: "Hello"))
         let poll = ChatPoll(question: "Q?", options: [ChatPollOption(text: "A"), ChatPollOption(text: "B")])
         session.polls.append(poll)
@@ -163,10 +163,19 @@ final class StorageServiceTests: XCTestCase {
     }
 
     func testImportAllValidatedTotalTooLarge() {
-        let data: [String: Data] = [
-            "apiConfig": Data(repeating: 0, count: StorageService.maxImportTotalBytes / 2 + 1),
-            "chatSessions": Data(repeating: 0, count: StorageService.maxImportTotalBytes / 2 + 1)
+        // 要触发"总量超限"而不是"单项超限":每项都必须小于单项上限(2MB),
+        // 但合计超过总量上限(20MB)。之前用的两项各 10MB,单项就先超了。
+        let itemSize = StorageService.maxImportItemBytes - 1
+        let keys = [
+            "accentColor", "apiConfig", "apiProfiles", "backgrounds", "bookmarks",
+            "chatSessions", "drafts", "friends.groups", "friends.meta",
+            "greetingCooldowns", "intimacy",
         ]
+        XCTAssertGreaterThan(keys.count * itemSize, StorageService.maxImportTotalBytes)
+        var data: [String: Data] = [:]
+        for key in keys {
+            data[key] = Data(repeating: 0, count: itemSize)
+        }
         do {
             _ = try storage.importAllValidated(data)
             XCTFail("Should throw totalPayloadTooLarge error")
@@ -202,7 +211,7 @@ final class StorageServiceTests: XCTestCase {
     func testImportAllReturnsCount() {
         let data: [String: Data] = [
             "apiConfig": try! JSONEncoder().encode(APIConfig.default),
-            "backgrounds": try! JSONEncoder().encode([ChatBackground]())
+            "backgrounds": try! JSONEncoder().encode([ChatBackgroundPreset]())
         ]
         let count = storage.importAll(data)
         XCTAssertEqual(count, 2)
@@ -218,7 +227,9 @@ final class StorageServiceTests: XCTestCase {
 
     func testGetWithExistingPrefix() {
         let key = "chat-buddy:prefixed"
-        defaults.set("test".data(using: .utf8), forKey: key)
+        // 存进去的必须是合法 JSON,否则解码失败、get 返回 nil。
+        // 之前直接存了 "test".data(using: .utf8)(裸字节,不是 JSON)。
+        defaults.set("\"test\"".data(using: .utf8), forKey: key)
         let result: String? = storage.get("prefixed")
         XCTAssertNotNil(result)
     }

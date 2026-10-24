@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import Chat_Buddy_iOS
 
 /// Remote → Cached → ViewData mapping tests per skill §"API models and

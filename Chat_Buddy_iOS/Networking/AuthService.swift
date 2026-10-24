@@ -114,7 +114,11 @@ public actor AuthService {
     /// must land back on sign-in instead of a stale session.
     public func checkAppleCredentialRevoked() async -> Bool {
         guard let subject = await auth.activeAppleSubject() else { return false }
-        let state = await ASAuthorizationAppleIDProvider().getCredentialState(forUserID: subject)
+        let state = await withCheckedContinuation { continuation in
+            ASAuthorizationAppleIDProvider().getCredentialState(forUserID: subject) { state, _ in
+                continuation.resume(returning: state)
+            }
+        }
         return state == .revoked
     }
 }
