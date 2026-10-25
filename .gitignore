@@ -100,3 +100,6 @@ pnpm-debug.log*
 # Web Reference Project
 Chat_Buddy_Web/
 Chat_Buddy_副本/
+
+# Local debugging artifacts (committed by mistake before)
+workspace/

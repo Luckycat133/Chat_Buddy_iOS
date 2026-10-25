@@ -17,6 +17,10 @@ final class APIConfigStore {
 
     static let activeKeyKey = "api-key-active"
     static func profileKeyKey(_ id: UUID) -> String { "api-key-profile-\(id.uuidString)" }
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     init() {
         let (config, savedProfiles) = Self.loadFromStorage(storage: StorageService.shared)

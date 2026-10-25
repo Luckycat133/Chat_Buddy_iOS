@@ -14,6 +14,10 @@ import Foundation
     private let accentColorManager: AccentColorManager
     private let appState: AppState
     private let stores: [any StoreReloading]
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     init(
         configStore: APIConfigStore,

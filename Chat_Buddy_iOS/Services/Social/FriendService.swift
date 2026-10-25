@@ -30,6 +30,10 @@ struct FriendMeta: Codable {
 
     private(set) var groups: [FriendGroup] = []
     private(set) var meta: [String: FriendMeta] = [:]
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     init() {
         reloadFromStorage()

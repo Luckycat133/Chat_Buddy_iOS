@@ -17,6 +17,10 @@ public final class PushNotificationService: NSObject, UNUserNotificationCenterDe
 
     private let logger = CloudLogger.push
     private var routeHandler: ((PushRoute) -> Void)?
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     private override init() { super.init() }
 
