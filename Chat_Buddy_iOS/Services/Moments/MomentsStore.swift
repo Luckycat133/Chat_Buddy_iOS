@@ -16,6 +16,10 @@ import os.log
     private static let storageKey = "moments"
     private static let logger = Logger.app(category: "MomentsStore")
     private static let momentsFolderName = "moments"
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     // MARK: - Init
 

@@ -64,6 +64,10 @@ struct KnowledgeEdge: Identifiable, Codable {
 
     private static let customNodesKey = "knowledgeGraph.custom"
     private static let edgesKey = "knowledgeGraph.edges"
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     init() {
         load()

@@ -29,6 +29,10 @@ enum ChatStoreError: LocalizedError {
     private var pendingSaveTask: Task<Void, Never>?
     private var isSaveScheduled = false
     private static let saveThrottleInterval: TimeInterval = 0.5
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     init() {
         sessions = StorageService.shared.get(kChatSessions, default: [])

@@ -18,6 +18,10 @@ public final class MediaUploadService: Sendable {
     private let http: HTTPClient
     private let session: URLSession
     private let logger = CloudLogger.capability
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     public init(http: HTTPClient, session: URLSession = .shared) {
         self.http = http

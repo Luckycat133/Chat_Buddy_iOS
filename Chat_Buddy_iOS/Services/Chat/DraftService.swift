@@ -11,6 +11,10 @@ import Foundation
         var savedAt: Date
         var quotedMessageId: String?
     }
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     init() {
         loadFromStorage()

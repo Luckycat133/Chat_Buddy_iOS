@@ -5,6 +5,10 @@ import Foundation
     private(set) var globalAnimation: AnimatedBackground = .none
     private(set) var chatPresets: [String: String] = [:]          // sessionId → presetId
     private(set) var chatAnimations: [String: AnimatedBackground] = [:] // sessionId → animation
+    /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`.
+    /// Under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this type gets an isolated
+    /// deinit, so releasing it off the main actor frees the instance twice.
+    nonisolated deinit {}
 
     init() { load() }
 
