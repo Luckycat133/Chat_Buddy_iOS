@@ -8,6 +8,9 @@
 ![iOS 26+](https://img.shields.io/badge/iOS-26.0+-black?style=flat&logo=apple)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-100%25-blue?style=flat&logo=swift)
 ![License MIT](https://img.shields.io/badge/License-MIT-green.svg)
+[![llms.txt](https://img.shields.io/badge/llms.txt-standardized-blueviolet)](llms.txt)
+
+> 🤖 **LLM & AI Agent Reference**: Standardized specifications are available in [`llms.txt`](llms.txt) and [`llms-full.txt`](llms-full.txt) following [llmstxt.org](https://llmstxt.org) guidelines.
 
 ## ✨ Key Features
 

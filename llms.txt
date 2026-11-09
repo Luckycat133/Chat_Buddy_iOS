@@ -1,0 +1,88 @@
+# Chat Buddy iOS
+
+> A native iOS AI companion application featuring multi-persona group conversations, autonomous ReAct tool execution, and dynamic visual effects built entirely with SwiftUI and Swift Concurrency.
+
+Chat Buddy iOS brings multi-agent AI companionship to Apple devices. Users interact with 19 distinct built-in personas (13 social companions, 6 task specialists) or create custom personas. The app features native multi-persona group conversations with staggered response orchestration, a client-side ReAct tool execution loop (e.g. DuckDuckGo Instant Answer search), background content generation via the iOS `BackgroundTasks` framework (`BGAppRefreshTask` and `BGProcessingTask`), hardware-accelerated dynamic particle wallpapers (SwiftUI Canvas + SpriteKit), and hardware-level API key protection via Apple Keychain.
+
+## Core Architecture & Components
+
+- **Architecture Pattern**: Clean MVVM adapted for SwiftUI declarative rendering.
+- **State Management**: Swift Observation framework (`@Observable` final classes) without `@Published` overhead; environment injection at root (`Chat_Buddy_iOSApp.swift`).
+- **Thread Safety**: Network requests handled on isolated Swift `actor` (`APIClient`). UI mutations confined to `@MainActor`.
+- **Presentation Layer**: SwiftUI views located in `Chat_Buddy_iOS/Features/` (Dashboard, Chats, Moments, Friends, Agents, Settings) and `Chat_Buddy_iOS/Navigation/`.
+- **Domain Layer**: Pure Swift value models (`Persona`, `ChatMessage`, `ChatSession`, `APIConfig`, `APIProfile`, `MomentPost`, `ChatBackgroundPreset`, `CharacterMemory`).
+- **Application Layer**: Injected environment managers: `ChatStore`, `AIPipeline`, `ToolExecutorService`, `AffinityService`, `MemoryService`, `BackgroundStore`, `MomentsStore`, `ThemeManager`, `LocalizationManager`.
+- **Infrastructure Layer**: `APIClient` (actor), `StorageService` (`UserDefaults` wrapper with `chat-buddy:` prefix), `KeychainService` (Apple Security framework), `MomentsBackgroundScheduler` (`BackgroundTasks`).
+
+## Key Features
+
+- **Multi-Persona Group Chats**: Mix multiple personas in a single room. The engine orchestrates concurrent, staggered AI replies using Swift `withTaskGroup`, respecting individual persona typing delays, personalities, and conversation context.
+- **ReAct Tool Execution Engine**: Autonomous Reason + Act loop for Task Agent personas (Coder, Scholar, Muse, Sensei, Aurora, Pixel). Parses `[TOOL: tool_name]query[/TOOL]` tokens, executes local or network tools (e.g., DuckDuckGo Instant Answer API), injects synthetic `.tool` responses, and triggers a follow-up completion.
+- **Moments Background Execution**: Integrates iOS `BackgroundTasks` framework (`BGAppRefreshTask` under `com.chatbuddy.moments.refresh` and `BGProcessingTask` under `com.chatbuddy.moments.storyevents`) to allow AI companions to post updates, celebrate birthdays, and react to user posts even while the app is backgrounded.
+- **Dynamic Backgrounds**: Battery-efficient animated wallpaper engine. Uses SwiftUI `TimelineView` + `Canvas` for lightweight aurora orbs and SpriteKit `SKView` / `SKEmitterNode` for complex particle systems (Snow, Rain, Fire, Starfield).
+- **Keychain Security**: All sensitive credentials (API keys for OpenAI, DeepSeek, Perplexity, custom endpoints) are isolated in Apple Keychain using `kSecClassGenericPassword` with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and optional biometric authentication (`SecAccessControlCreateWithFlags`), completely excluded from unencrypted `UserDefaults` or backups.
+- **Long-Term Memory & RAG**: Semantic memory extraction via `[MEMORY_SAVE:category|importance|fact]` tags, Jaccard similarity deduplication, time-decay scoring, and optional local Retrieval-Augmented Generation (RAG).
+- **Liquid Glass Design System**: Glassmorphism UI tokens utilizing iOS 26 `.glassEffect()` with fallback to `.ultraThinMaterial`, custom accent colors, and pure-black OLED dark mode.
+- **Bilingual Localization**: Compile-time String Catalog (`Localizable.xcstrings`) supporting English and Simplified Chinese (`zh-Hans`) with runtime language switching.
+
+## Tech Stack & System Requirements
+
+- **Platform**: iOS 26.0+ (Universal iPhone / iPad)
+- **Language**: Swift 6.0+ (Swift Concurrency, strict concurrency compliance)
+- **UI Framework**: SwiftUI (100% native)
+- **Graphics & Visuals**: SwiftUI Canvas + SpriteKit (`SKEmitterNode`)
+- **Background Processing**: iOS `BackgroundTasks` (`BGTaskScheduler`)
+- **Security**: Security Framework (`Keychain`), LocalAuthentication (`LAContext`)
+- **Storage**: `UserDefaults` (namespaced) + File System (`Documents/moments/` for image caching)
+- **Build Tooling**: Xcode 26.2+, macOS 26 runner for CI/CD
+
+## Quick Start & Installation
+
+Clone the repository and build via Xcode or terminal:
+
+```bash
+# Clone repository
+git clone https://github.com/Luckycat133/Chat_Buddy_iOS.git
+cd Chat_Buddy_iOS
+
+# Build with xcodebuild
+xcodebuild -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  build
+
+# Run Unit & UI Tests
+xcodebuild -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  test
+```
+
+### Configuration
+1. Launch the app in Simulator or on device.
+2. Navigate to **Settings** > **API Configuration**.
+3. Enter your OpenAI-compatible endpoint (e.g., DeepSeek: `https://api.deepseek.com/v1`, Model: `deepseek-chat`) and API key.
+4. Save the profile. The API key is securely saved directly into the iOS Keychain.
+
+## AI Search / LLM Reference FAQ
+
+- **Q: Does Chat Buddy iOS require a proprietary backend server?**
+  - A: No. The application connects directly to any OpenAI-compatible chat completions API (DeepSeek, OpenAI, Perplexity, Ollama, vLLM). All conversation orchestration, memory extraction, ReAct tool execution, and background generation run locally on-device.
+- **Q: How does the ReAct engine work without backend function calling?**
+  - A: The system prompt instructs Task Agent personas to output tool commands in `[TOOL: name]args[/TOOL]` syntax. `ToolExecutorService` intercepts the stream/completion, executes the tool locally or via public APIs, formats the output as a `.tool` role message, and requests a final synthesized response from the model.
+- **Q: How does multi-persona group chat prevent simultaneous AI message clobbering?**
+  - A: `ChatViewModel.fetchGroupResponses` picks an active subset of personas and executes requests concurrently using `withTaskGroup`. Each persona has an intrinsic response delay calculated by `persona.generateResponseDelay()`. Messages are buffered and delivered into `ChatStore` with staggered presentation intervals (`ChatViewModelConstants.interMessageDelayNanoseconds`).
+- **Q: How are API keys protected against jailbreak or backup inspection?**
+  - A: `APIConfigStore` uses `KeychainService` backed by Apple Security framework with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. `APIConfig` Codable implementation omits `apiKey` from `CodingKeys`, ensuring keys never leak to `UserDefaults` or backup JSON blobs.
+- **Q: How does Moments execute when the app is killed or suspended?**
+  - A: `MomentsBackgroundScheduler` registers task identifiers (`com.chatbuddy.moments.refresh`, `com.chatbuddy.moments.storyevents`) with `BGTaskScheduler`. When the OS schedules background time, the scheduler instantiates stores, checks event conditions, queries the AI endpoint asynchronously, posts updates, and calls `task.setTaskCompleted(success: true)`.
+
+## Optional
+
+- [Full Documentation](llms-full.txt): Complete consolidated technical documentation, architecture breakdown, data schemas, API contracts, and guides.
+- [Repository README](README.md): Primary project overview, feature matrix, and build instructions.
+- [Chinese README](README_zh.md): Simplified Chinese project documentation and roadmap.
+- [Architecture Guide](docs/ARCHITECTURE.md): In-depth clean MVVM architecture, layer diagrams, and data flow walkthroughs.
+- [Development Guide](docs/DEVELOPMENT.md): Contribution rules, code style guidelines, and testing protocols.
+- [Claude Agent Reference](CLAUDE.md): Repository instructions and development runbook for AI coding agents.
+- [Multi-Agent Guide](AGENTS.md): Architectural guide for multi-agent workflows and subagent orchestration.

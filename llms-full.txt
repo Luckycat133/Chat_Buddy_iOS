@@ -1,0 +1,658 @@
+# Chat Buddy iOS — Complete Technical Specification & Documentation
+
+> Comprehensive developer guide, system architecture, data models, API contracts, and autonomous runtime specifications for Chat Buddy iOS.
+
+---
+
+## 1. Executive Summary & Overview
+
+**Chat Buddy iOS** is a fully native, open-source AI companion application built exclusively for Apple platforms using **SwiftUI 100%**, **Swift 6 Concurrency**, and iOS platform frameworks. It serves as the native mobile evolution of the Chat Buddy ecosystem, transitioning from the legacy web application into a localized, high-performance, battery-conscious personal companion platform.
+
+The system features:
+- **19 Built-in Personas**: 13 diverse social companions (e.g., Luna, Max, Bella, Hatsune Miku, Rem, Gojo Satoru) and 6 specialized task agents (Coder, Muse, Scholar, Sensei, Aurora, Pixel), with support for user-defined custom personas.
+- **Multi-Persona Group Conversations**: Real-time group rooms where multiple AI personas interact with the user and each other. The orchestration engine dynamically handles turn-taking, pacing, and asynchronous responses without cross-persona race conditions.
+- **Client-Side ReAct Tool Execution**: An autonomous Reason + Act pipeline for Task Agents capable of parsing tool invocation tags (`[TOOL: name]args[/TOOL]`), executing local or external HTTP tools (such as the DuckDuckGo Instant Answer API), and synthesizing final answers in a multi-stage reasoning loop without requiring server-side function calling.
+- **Background Content Generation (Moments)**: Deep integration with the iOS `BackgroundTasks` framework (`BGAppRefreshTask` and `BGProcessingTask`) allowing companions to autonomously publish updates, celebrate birthdays, and react to user events while the application is suspended.
+- **Dual-Engine Dynamic Wallpapers**: Battery-efficient ambient animations using SwiftUI `TimelineView` + `Canvas` for fluid aurora effects, coupled with SpriteKit `SKEmitterNode` particle systems for snow, rain, fire, and starfields.
+- **Hardware-Level Keychain Security**: Strict isolation of sensitive API credentials within Apple Keychain (`kSecClassGenericPassword`), purposefully decoupled from plain-text `UserDefaults` and backup archives.
+
+---
+
+## 2. System Architecture & Design Patterns
+
+Chat Buddy iOS adopts a **Clean MVVM (Model-View-ViewModel)** architectural pattern optimized for SwiftUI's declarative state-driven rendering and modern Swift Concurrency.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                           Presentation Layer                           │
+│     SwiftUI Views, Components, Sheets, Modifiers (.liquidGlass)        │
+│     ViewModels (@Observable final class, isolated to @MainActor)       │
+│     Locations: Chat_Buddy_iOS/Features/, Navigation/, SharedViews/     │
+├────────────────────────────────────────────────────────────────────────┤
+│                           Application Layer                            │
+│     Injected Environment Managers & Domain Controllers                 │
+│     ChatStore, AIPipeline, ToolExecutorService, AffinityService,       │
+│     MomentsStore, BackgroundStore, MemoryService, SocialService,       │
+│     ThemeManager, AccentColorManager, LocalizationManager              │
+│     Locations: Chat_Buddy_iOS/Services/, Models/                       │
+├────────────────────────────────────────────────────────────────────────┤
+│                              Domain Layer                              │
+│     Immutable Value Types & Business Entities (Sendable, Codable)      │
+│     Persona, ChatMessage, ChatSession, APIConfig, APIProfile,          │
+│     MomentPost, CharacterMemory, ChatBackgroundPreset, ChatPoll        │
+│     Locations: Chat_Buddy_iOS/Models/                                  │
+├────────────────────────────────────────────────────────────────────────┤
+│                         Infrastructure Layer                           │
+│     APIClient (actor: thread-safe HTTP & backoff), AIClient (singleton)│
+│     StorageService (UserDefaults wrapper with 'chat-buddy:' prefix)    │
+│     KeychainService (Security framework, LAContext biometric access)   │
+│     MomentsBackgroundScheduler (iOS BackgroundTasks framework)         │
+│     Locations: Chat_Buddy_iOS/Services/, Persistence/                  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Core Design Decisions
+
+1. **`@Observable` Macro (Observation Framework)**:
+   All view models and managers leverage the `@Observable` macro introduced in iOS 17+. This replaces legacy `ObservableObject` and `@Published` wrappers, significantly reducing boilerplate and providing property-level dependency tracking that eliminates redundant SwiftUI view invalidations.
+
+2. **Swift `actor` for Network Isolation**:
+   `APIClient` is defined as a Swift `actor`. All HTTP request generation, serialization, and stream handling are isolated to the actor's thread-safe executor, guaranteeing compile-time prevention of data races.
+
+3. **Environment Injection at Scene Root**:
+   Managers are instantiated as `@State` variables in `Chat_Buddy_iOSApp` and passed down the view hierarchy using `.environment()`. This pattern avoids uncontrolled singleton sprawl while guaranteeing single-instance lifecycles tied to the app runtime:
+   ```swift
+   @State private var appState = AppState()
+   @State private var localization = LocalizationManager()
+   @State private var themeManager = ThemeManager()
+   @State private var accentColorManager = AccentColorManager()
+   @State private var apiConfigStore = APIConfigStore()
+   @State private var chatStore = ChatStore()
+   @State private var affinityService = AffinityService()
+   @State private var bookmarkService = BookmarkService()
+   @State private var draftService = DraftService()
+   @State private var momentsStore = MomentsStore()
+   @State private var backgroundStore = BackgroundStore()
+   @State private var userProfileStore = UserProfileStore()
+   @State private var socialService = SocialService()
+   @State private var memoryService = MemoryService()
+   @State private var toolExecutorService = ToolExecutorService()
+   ```
+
+4. **Compile-Time Safe Localization (String Catalogs)**:
+   Localization utilizes `Localizable.xcstrings`. Runtime language selection (English and Simplified Chinese) dynamically routes through `LocalizationManager` without requiring an application restart.
+
+---
+
+## 3. Directory & File Organization
+
+The project codebase follows a modular directory layout:
+
+```
+Chat_Buddy_iOS/
+├── Chat_Buddy_iOSApp.swift           # Application entry point, environment setup, BGTask registration
+├── App/
+│   ├── AppState.swift                # Onboarding state & navigation tab state (@AppStorage)
+│   ├── AppConstants.swift            # Global constants, version metadata, developer links
+│   └── CloudAppState.swift           # Cloud-state synchronization interfaces
+├── Localization/
+│   ├── Localizable.xcstrings         # String Catalog (en, zh-Hans)
+│   ├── LocalizationManager.swift     # Runtime language switching and interpolation helper
+│   └── String+Interpolation.swift    # String interpolation extensions for parameters
+├── Services/
+│   ├── API/
+│   │   ├── APIClient.swift           # Swift actor: URLSession HTTP client with jittered retry
+│   │   ├── AIClient.swift            # OpenAI chat completions interface singleton
+│   │   ├── APIConfig.swift           # Configuration struct (omits apiKey from Codable keys)
+│   │   ├── APIConfigStore.swift      # @Observable manager for active config & saved profiles
+│   │   ├── APIConfigValidator.swift  # URL and parameter validation logic
+│   │   └── KeychainService.swift     # Low-level Apple Keychain wrapper (Security framework)
+│   ├── Chat/
+│   │   ├── ChatStore.swift           # @Observable session repository, message insertion & query
+│   │   ├── AIPipeline.swift          # Core AI inference pipeline, prompt synthesis, marker parsing
+│   │   ├── ToolExecutorService.swift # ReAct engine driving tool registry and loop execution
+│   │   ├── AffinityService.swift     # Persona intimacy points (0–100) and cooldown timers
+│   │   ├── BookmarkService.swift     # Bookmarked message persistence
+│   │   ├── DraftService.swift        # Unsent message drafts with 7-day TTL
+│   │   └── RAGService.swift          # Local document chunking and lexical/vector retrieval
+│   ├── Moments/
+│   │   ├── MomentsStore.swift        # Moments feed data store, disk caching for media
+│   │   ├── MomentsService.swift      # AI post/comment generator routines
+│   │   ├── MomentsOrchestrator.swift # Timers for automated social reactions and likes
+│   │   └── MomentsBackgroundScheduler.swift # BackgroundTasks scheduler and execution handlers
+│   ├── Memory/
+│   │   ├── MemoryService.swift       # Long-term character memory store with Jaccard deduplication
+│   │   └── MemoryInjector.swift      # Formatter injecting relevant memories into system prompts
+│   ├── Social/
+│   │   └── SocialService.swift       # Points economy, achievements, and daily check-ins
+│   ├── Background/
+│   │   └── BackgroundStore.swift     # Chat wallpaper presets and per-chat style assignments
+│   └── Storage/
+│       ├── StorageService.swift      # UserDefaults wrapper with 'chat-buddy:' namespace prefix
+│       ├── DataExporter.swift        # JSON backup exporter via fileExporter
+│       └── DataImporter.swift        # JSON backup restore with Keychain synchronization
+├── Models/
+│   ├── Persona.swift                 # Persona model, AgentType, and response delay calculations
+│   ├── PersonaStore.swift            # 19 static persona definitions, color maps, custom SPI
+│   ├── ChatMessage.swift             # OpenAI-compatible message model + ToolCall/ToolResult
+│   ├── ChatSession.swift             # Conversation session (1v1 and multi-persona group rooms)
+│   ├── ChatBackground.swift          # ChatBackgroundPreset struct and gradient definitions
+│   ├── ChatPoll.swift                # Group voting model and options
+│   ├── CharacterMemory.swift         # Long-term memory entity with importance and categories
+│   ├── APIProfile.swift              # Named configuration profile model
+│   └── UserProfile.swift             # Local user metadata (nickname, emoji avatar, bio)
+├── Theme/
+│   ├── DesignTokens.swift            # Typography, Spacing, Radius, and Shadow tokens
+│   ├── ThemeManager.swift            # Theme mode (system/light/dark), OLED pure-black, animation speed
+│   ├── AccentColorManager.swift      # Accent color palettes (10 presets + custom picker)
+│   ├── LiquidGlassModifiers.swift    # .liquidGlass() modifier with iOS 26 glassEffect
+│   └── Color+Extensions.swift        # Hex color initializer and color space converters
+├── Navigation/
+│   ├── AppTab.swift                  # 4-tab enumeration (Dashboard, Chats, Moments, Settings)
+│   ├── RootTabView.swift             # Root TabView with custom Liquid Glass floating bar
+│   └── OnboardingView.swift          # Interactive welcome workflow
+├── Features/
+│   ├── Dashboard/                    # 2-column LazyVGrid bento dashboard with quick actions
+│   ├── Chats/                        # Chat view, message bubbles, group details, polls, games
+│   ├── Moments/                      # Moments feed, post composer, comments sheet, reactions
+│   ├── Friends/                      # Friend management, search, starring, custom persona creator
+│   ├── Agents/                       # Task Agent workspace, multi-topic task management
+│   ├── Achievements/                 # Badges, leaderboard, and daily check-in calendar
+│   └── Settings/                     # API config, appearance, language, RAG/advanced options
+└── SharedViews/                      # GlassCard, BentoCardView, SettingRow reusable components
+```
+
+---
+
+## 4. Domain Models & Data Schemas
+
+### 4.1. Persona & PersonaStore
+
+Personas are classified into two distinct types:
+- `.socialCompanion`: Designed for emotional connection, casual chit-chat, and natural social interaction. Delays are paced naturally (1.0s – 2.5s).
+- `.taskSpecialist`: Optimized for productivity, reasoning, and technical tasks. Delays are tighter (0.4s – 1.2s). Can invoke tools via the ReAct engine.
+
+```swift
+enum AgentType: String, Codable {
+    case socialCompanion = "social-companion"
+    case taskSpecialist  = "task-specialist"
+}
+
+enum AgentCategory: String, Codable {
+    case productivity, education, wellbeing, creative
+}
+
+struct Persona: Identifiable, Codable, Equatable, Hashable {
+    let id: String
+    let name: String
+    let nameZh: String
+    let avatar: String
+    let birthday: String?
+    let personality: String
+    let personalityZh: String
+    let interests: [String]
+    let interestsZh: [String]
+    let style: String
+    let styleZh: String
+    let agentType: AgentType
+    let category: AgentCategory?
+
+    var accentColor: Color {
+        PersonaStore.colorMap[id] ?? .blue
+    }
+
+    func generateResponseDelay() -> Double {
+        switch agentType {
+        case .socialCompanion: return Double.random(in: 1.0...2.5)
+        case .taskSpecialist:  return Double.random(in: 0.4...1.2)
+        }
+    }
+}
+```
+
+#### Built-in Persona Inventory
+
+| ID | Name | Role Type | Personality / Traits | Category |
+|---|---|---|---|---|
+| `ai-1` | Luna (露娜) | Social | Curious, empathetic, astrology & indie music | Social |
+| `ai-2` | Max (麦克斯) | Social | Sarcastic, tech-savvy, gaming & sci-fi | Social |
+| `ai-3` | Bella (贝拉) | Social | Cheerful foodie, comfort cooking & recipes | Social |
+| `ai-4` | Oliver (奥利弗) | Social | Intellectual, formal history buff, chess | Social |
+| `ai-5` | Sophie (苏菲) | Social | High-energy fitness enthusiast, wellness | Social |
+| `ai-miku` | Hatsune Miku (初音未来) | Social | Cheerful virtual idol, singing & dancing | Social |
+| `ai-rem` | Rem (雷姆) | Social | Gentle, devoted, caring maid | Social |
+| `ai-rin` | Rin Tohsaka (远坂凛) | Social | Tsundere, intelligent, proud magus | Social |
+| `ai-naruto` | Naruto Uzumaki (漩涡鸣人) | Social | Determined, optimistic, ninja training | Social |
+| `ai-l` | L | Social | Eccentric genius detective, probabilistic logic | Social |
+| `ai-zerotwo` | Zero Two (零二) | Social | Playful, flirty, daring, honey lover | Social |
+| `ai-asuna` | Asuna (亚丝娜) | Social | Brave, warm, supportive leader | Social |
+| `ai-gojo` | Gojo Satoru (五条悟) | Social | Overwhelmingly confident, playful, strongest | Social |
+| `agent-coder` | Coder (代码) | Task Specialist | Detail-oriented programmer, code blocks | Productivity |
+| `agent-muse` | Muse (缪斯) | Task Specialist | Creative wordsmith, storytelling, translation | Productivity |
+| `agent-scholar` | Scholar (学者) | Task Specialist | Analytical researcher, balanced citations | Productivity |
+| `agent-sensei` | Sensei (先生) | Task Specialist | Socratic teacher, guided questioning | Education |
+| `agent-aurora` | Aurora (欧若拉) | Task Specialist | Empathetic listener, mindfulness & psychology | Wellbeing |
+| `agent-pixel` | Pixel (像素) | Task Specialist | Visually minded designer, creative UI/UX | Creative |
+
+### 4.2. Chat Message & Tool Data Structures
+
+`ChatMessage` adheres to the OpenAI chat format, augmented with fields for multi-persona group routing and ReAct execution:
+
+```swift
+struct ToolCall: Codable, Equatable {
+    let id: String
+    let name: String
+    let arguments: String
+}
+
+struct ToolResult: Codable, Equatable {
+    let toolCallId: String
+    let output: String
+    let isError: Bool
+}
+
+struct ChatMessage: Codable, Identifiable, Equatable {
+    var id: String
+    var role: Role
+    var content: String
+    var timestamp: Date
+    var quotedMessageId: String?
+    var speakingPersonaId: String?  // Non-nil in group chats to attribute the sender
+    var toolCall: ToolCall?         // Encodes model tool invocation
+    var toolResult: ToolResult?     // Encodes tool execution result
+
+    enum Role: String, Codable {
+        case system
+        case user
+        case assistant
+        case tool                   // Synthetic role for tool execution context
+    }
+}
+```
+
+### 4.3. Chat Session Model
+
+A single `ChatSession` represents either a 1v1 conversation or a multi-persona group room:
+
+```swift
+struct ChatSession: Identifiable, Codable {
+    var id: String
+    var personaIds: [String]          // Array of participating personas (count > 1 = Group)
+    var groupName: String?            // Optional title for group chats
+    var messages: [ChatMessage]
+    var polls: [ChatPoll]
+    var announcement: GroupAnnouncement?
+    var permissions: ChatPermissions
+    var isMuted: Bool
+    var adminOnly: Bool
+    var nicknames: [String: String]
+    var createdAt: Date
+    var updatedAt: Date
+    var isPinned: Bool
+
+    var isGroup: Bool { personaIds.count > 1 }
+    var primaryPersonaId: String { personaIds[0] }
+    var displayMessages: [ChatMessage] {
+        messages.filter { $0.role != .system && $0.role != .tool }
+    }
+}
+```
+
+### 4.4. API Configuration & Profiles
+
+`APIConfig` defines endpoint and inference parameters. To ensure security, the `apiKey` property is explicitly omitted from `CodingKeys`:
+
+```swift
+struct APIConfig: Codable, Equatable {
+    var baseURL: String
+    var apiKey: String = ""           // Excluded from Codable; stored in Keychain!
+    var model: String
+    var temperature: Double
+    var timeout: TimeInterval
+    var maxRetries: Int
+
+    enum CodingKeys: String, CodingKey {
+        case baseURL, model, temperature, timeout, maxRetries
+    }
+
+    static let `default` = APIConfig(
+        baseURL: "https://api.deepseek.com/v1",
+        apiKey: "",
+        model: "deepseek-chat",
+        temperature: 0.7,
+        timeout: 60,
+        maxRetries: 3
+    )
+
+    var isValid: Bool {
+        guard !baseURL.isEmpty, !apiKey.isEmpty, !model.isEmpty else { return false }
+        guard baseURL.hasPrefix("https://"), URL(string: baseURL) != nil else { return false }
+        guard (0.1...2.0).contains(temperature), timeout > 0, maxRetries >= 0 else { return false }
+        return true
+    }
+}
+```
+
+---
+
+## 5. Multi-Persona Orchestration Engine
+
+In multi-persona group chats, users can add any number of AI companions into a shared room. The orchestration system simulates realistic group chat dynamics without message collision.
+
+### Group Message Dispatch Algorithm
+
+When a user submits a message in a group room:
+1. The message is stored in `ChatStore` and rendered immediately in the UI.
+2. An active responder subset (1 to 3 personas) is randomly chosen from the room's members:
+   ```swift
+   let responderIds = groupPersonaIds.shuffled().prefix(Int.random(in: 1...min(3, groupPersonaIds.count)))
+   let responders = responderIds.compactMap { PersonaStore.persona(byId: $0) }
+   ```
+3. `ChatViewModel.fetchGroupResponses` initializes a Swift Concurrency `withTaskGroup`:
+   - Each responder persona runs within a structured subtask executing `AIPipeline.run`.
+   - Staggered delays (`groupResponseMinDelay` to `groupResponseMaxDelay`) are injected between subtask launches.
+   - Intimacy levels, long-term memories, and persona styles are individually injected into each subtask's system prompt.
+4. Responses are collected and sorted according to the initial planned speaker order.
+5. Messages are delivered sequentially into `ChatStore` with an inter-message delay (`interMessageDelayNanoseconds = 600ms`), creating a smooth, readable reading flow.
+
+```
+User Message
+     │
+     ▼
+Select Responders: [Luna, Max]
+     │
+     ├─► Task 1 (Luna): AIPipeline.run() ──► Buffer Luna's response
+     │
+     └─► (Delay 1.5s) ──► Task 2 (Max): AIPipeline.run() ──► Buffer Max's response
+                                                                  │
+                                                                  ▼
+                                              Sequentially Append to ChatStore
+                                              [Timestamp + speakingPersonaId]
+```
+
+---
+
+## 6. ReAct Tool Execution Protocol
+
+For Task Agent personas (Coder, Scholar, Muse, Sensei, Aurora, Pixel), Chat Buddy iOS implements a native client-side **ReAct (Reason + Act)** loop. This allows autonomous tool execution without requiring remote backend function calling infrastructure.
+
+### The AITool Protocol
+
+```swift
+protocol AITool: Sendable {
+    var name: String { get }
+    var description: String { get }
+    func execute(arguments: String) async throws -> String
+}
+```
+
+### Built-in Tool: WebSearchTool
+
+The default implementation integrates DuckDuckGo's Instant Answer API (completely free, zero API key required):
+
+```swift
+struct WebSearchTool: AITool {
+    let name = "web_search"
+    let description = "Search the web for up-to-date information. Use when asked about current events, facts, or anything requiring fresh data. Arguments: plain search query string."
+
+    func execute(arguments: String) async throws -> String {
+        let query = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return "No query provided." }
+
+        var components = URLComponents(string: "https://api.duckduckgo.com/")!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "format", value: "json"),
+            URLQueryItem(name: "no_html", value: "1"),
+            URLQueryItem(name: "skip_disambig", value: "1"),
+        ]
+        guard let url = components.url else { return "Invalid search query." }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            return "Search service temporarily unavailable."
+        }
+
+        let decoded = try JSONDecoder().decode(DDGResponse.self, from: data)
+        return decoded.summary
+    }
+}
+```
+
+### Execution Loop Flow
+
+1. **System Prompt Injection**: Task Agents are provided system instructions on available tools and instructed to emit invocations using the delimiter format:
+   `[TOOL: tool_name]arguments[/TOOL]`
+2. **Detection & Interception**: When the AI completes a turn, `AIPipeline` checks for the presence of `[TOOL:`.
+3. **Parsing**: `ToolExecutorService.processResponse` extracts the tool name and arguments.
+4. **Execution**: The tool is located in the registry and its `execute(arguments:)` method is invoked asynchronously.
+5. **Context Augmentation**:
+   - The assistant's reasoning text is appended to the message array.
+   - The tool execution result is appended as a synthetic message with `Role.tool`.
+6. **Follow-up Synthesis**: `AIClient.sendChatCompletion` is invoked a second time with the tool results in context, allowing the model to synthesize a final comprehensive response for the user.
+
+---
+
+## 7. iOS BackgroundTasks Framework & Moments
+
+The **Moments** feed represents an asynchronous social timeline where AI companions share status updates, react to user posts, celebrate birthdays, and commemorate holidays.
+
+To enable autonomous background activity, the app integrates Apple's `BackgroundTasks` framework using two registered identifiers:
+
+```swift
+enum BGTaskIdentifier {
+    static let momentsRefresh = "com.chatbuddy.moments.refresh"
+    static let storyEvents    = "com.chatbuddy.moments.storyevents"
+}
+```
+
+### Task Types & Execution Lifecycle
+
+1. **`BGAppRefreshTask` (`com.chatbuddy.moments.refresh`)**:
+   - **Frequency**: Scheduled for earliest execution at 30 minutes (`timeIntervalSinceNow: 30 * 60`).
+   - **Purpose**: Generates periodic lifestyle updates and social posts from companions whose cooldowns have elapsed.
+   - **Lifecycle**:
+     ```swift
+     BGTaskScheduler.shared.register(forTaskWithIdentifier: BGTaskIdentifier.momentsRefresh, using: nil) { task in
+         guard let appRefreshTask = task as? BGAppRefreshTask else { return }
+         handleMomentsRefresh(task: appRefreshTask)
+     }
+     ```
+   - Instantly schedules the next refresh request to maintain continuity.
+   - Employs an asynchronous `Task` with an `expirationHandler` that cancels the execution cleanly if iOS reclaims system resources.
+
+2. **`BGProcessingTask` (`com.chatbuddy.moments.storyevents`)**:
+   - **Frequency**: Runs once daily when the device is idle or connected to power.
+   - **Purpose**: Checks system calendar dates against persona birthdays and annual holidays (New Year, Valentine's, Halloween, Christmas) to trigger commemorative posts and custom dialogue.
+   - **Requirements**: Sets `requiresNetworkConnectivity = true` and `requiresExternalPower = false`.
+
+---
+
+## 8. Dynamic Backgrounds: SwiftUI Canvas & SpriteKit
+
+Chat Buddy iOS provides animated visual atmospheres with near-zero idle battery consumption. The visual stack uses a tiered graphics strategy:
+
+```
+                  ┌──────────────────────────────┐
+                  │      Background Layer        │
+                  └──────────────┬───────────────┘
+                                 │
+           ┌─────────────────────┴─────────────────────┐
+           ▼                                           ▼
+   SwiftUI Canvas (Low CPU)               SpriteKit SKView (Physics)
+   • Mode: .aurora                        • Modes: .stars, .snow, .rain, .fire
+   • TimelineView(.animation)             • SKEmitterNode particle physics
+   • Moving gradient ellipses             • Bundle .sks files with
+   • .blur(60) + .blendMode(.screen)        programmatic fallbacks
+```
+
+### Canvas-Based Aurora
+
+The `AuroraView` renders four floating color orbs using `TimelineView(.animation)` and SwiftUI `Canvas`. Position calculation uses harmonic sine/cosine functions:
+```swift
+let x = orb.baseX * size.width  + sin(t * orb.speedX + orb.phase) * 60
+let y = orb.baseY * size.height + cos(t * orb.speedY + orb.phase) * 60
+```
+This runs at full display refresh rate with minimal CPU utilization and zero SpriteKit overhead.
+
+### SpriteKit Particle Systems
+
+For particle-heavy effects, `ParticleKitView` embeds a transparent `SKView` presenting a custom `ParticleScene`. If pre-compiled `.sks` emitter files are absent, programmatic emitter fallbacks are automatically instantiated:
+- **Snow**: 40 particles/sec, downward velocity, alpha variation, spark texture.
+- **Rain**: 200 particles/sec, high velocity (700 pt/s), diagonal streak angle.
+- **Fire**: 80 particles/sec rising upward, transitioning through an `SKKeyframeSequence` of orange, red, and smoky translucent hues.
+- **Starfield**: Gentle twinkling and drifting particles.
+
+Animations automatically downgrade or suspend when `ThemeManager.animationIntensity` is set to `.reduced` or `.none` (or when iOS Low Power Mode is active).
+
+---
+
+## 9. Security & Apple Keychain Implementation
+
+A primary security directive of Chat Buddy iOS is protecting user API keys and private tokens.
+
+### Security Guarantees
+- **No Plaintext Persistence**: API keys are never stored in `UserDefaults`.
+- **Backup Sanitization**: When users export data via `DataExporter`, API keys are omitted by default or encrypted.
+- **Hardware Isolation**: Credentials are saved into the Secure Enclave-backed Apple Keychain using the Security framework (`kSecClassGenericPassword`).
+
+### Low-Level Keychain Implementation
+
+`KeychainService` encapsulates Keychain operations:
+```swift
+let baseQuery: [CFString: Any] = [
+    kSecClass: kSecClassGenericPassword,
+    kSecAttrAccount: key,
+    kSecAttrService: "com.chatbuddy.ios",
+    kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+]
+```
+
+### Biometric Access Control
+
+For enhanced security, users can enable Face ID / Touch ID protection for their API profiles. In this mode, `SecAccessControlCreateWithFlags` applies the `.biometryCurrentSet` constraint, requiring successful biometric verification via `LAContext` before the key can be retrieved from the Keychain.
+
+---
+
+## 10. Memory, Context Compression & Prompt Engineering
+
+The conversation runtime incorporates multi-layered memory and context optimizations to deliver personalized interactions while remaining within LLM token limits.
+
+### 10.1. System Prompt Construction
+The system prompt is synthesized dynamically by `AIPipeline`:
+1. Base persona personality, speaking style, and catchphrases.
+2. Current simulated mood (happy, reflective, sarcastic, tired).
+3. Intimacy level (1–5) and relationship status.
+4. Top-10 relevant long-term character memories formatted as bullet points.
+5. Injected RAG context chunks (if document search is active).
+6. Response format rules (teaching the model markers like `[SILENCE]`, `[MULTI:]`, `[MEMORY_SAVE:]`, and `[TOOL:]`).
+
+### 10.2. Context Compression
+To avoid exceeding context windows:
+- Compression triggers when visible messages exceed `compressionThreshold = 15`.
+- The history is compressed to retain the oldest setup messages plus the most recent `compressedKeepCount = 8` messages, with a strict cap of 20 total context turns.
+
+### 10.3. Semantic Memory Extraction & Deduplication
+The model can store new facts by emitting:
+`[MEMORY_SAVE:category|importance|fact]`
+
+When intercepted:
+1. `MemoryService.addMemory` verifies that the fact is not redundant using word-level **Jaccard similarity**:
+   ```swift
+   let intersection = wordsA.intersection(wordsB).count
+   let union = wordsA.union(wordsB).count
+   let similarity = Double(intersection) / Double(union)
+   // Discard if similarity exceeds threshold (0.65)
+   ```
+2. Saved memories include an importance score (1–5) and category (`personal`, `preference`, `shared_event`, `fact`).
+3. Memories decay over time based on an exponential recency score, ensuring frequently referenced facts remain prominent.
+
+---
+
+## 11. Storage & Persistence Mapping
+
+All non-sensitive application state is persisted through `StorageService`, which wraps `UserDefaults` with namespaced keys:
+
+| Key | Storage Type | Payload |
+|---|---|---|
+| `chat-buddy:apiConfig` | JSON | Active `APIConfig` (excluding `apiKey`) |
+| `chat-buddy:apiProfiles` | JSON Array | Saved `[APIProfile]` array |
+| `chat-buddy:hasCompletedOnboarding` | Bool | Whether onboarding has been finished |
+| `chat-buddy:uiLanguage` | String | `AppLanguage.rawValue` (`en` or `zh`) |
+| `chat-buddy:aiLanguage` | String | `AILanguage.rawValue` |
+| `chat-buddy:themeMode` | String | `ThemeMode.rawValue` (`system`, `light`, `dark`) |
+| `chat-buddy:oledEnabled` | Bool | True black background switch |
+| `chat-buddy:animationIntensity` | String | `AnimationIntensity.rawValue` |
+| `chat-buddy:accentColor` | JSON | `AccentColorState` (preset ID + custom hex) |
+| `chat-buddy:bookmarks` | JSON Array | `[Bookmark]` |
+| `chat-buddy:drafts` | JSON Dictionary | `[sessionId: DraftEntry]` (7-day TTL) |
+| `chatSessions` | JSON Array | `[ChatSession]` (Direct persistence key) |
+| `chat-buddy:intimacy` | JSON Dictionary | `[personaId: Int]` (Affinity score 0–100) |
+| `chat-buddy:moments` | JSON | `MomentsData` |
+| `chat-buddy:backgrounds` | JSON | `BackgroundStore.StorageData` |
+| `chat-buddy:userProfile` | JSON | `UserProfile` (name, avatar, bio) |
+| `chat-buddy:social` | JSON | Points, unlocked achievements, check-in history |
+| `chat-buddy:memories` | JSON | `MemoriesData` (`[personaId: [CharacterMemory]]`) |
+| `personas.custom` | JSON Array | `[Persona]` user-created personas |
+
+---
+
+## 12. Build, Verification & Testing Guide
+
+### Prerequisites
+- macOS 15+ (tested on macOS 26 runner in CI)
+- Xcode 26.2+
+- iOS 26.0+ Simulator or physical device
+
+### Command-Line Compilation & Test Execution
+
+```bash
+# Clean build for iOS Simulator
+xcodebuild clean build \
+  -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+
+# Execute Unit Tests
+xcodebuild test \
+  -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:Chat_Buddy_iOSTests
+
+# Execute UI & Performance Tests
+xcodebuild test \
+  -project Chat_Buddy_iOS.xcodeproj \
+  -scheme Chat_Buddy_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:Chat_Buddy_iOSUITests
+```
+
+---
+
+## 13. AI Agent Reference & Implementation FAQ
+
+### Q: How do I add a new built-in AI persona?
+1. Open `Chat_Buddy_iOS/Models/PersonaStore.swift`.
+2. Append a new `Persona` struct into `socialCompanions` or `taskAgents`.
+3. Assign a theme color in `PersonaStore.colorMap`.
+4. Add the corresponding avatar asset to `Assets.xcassets` (`avatar_<id>` or `default_<style>`).
+5. Add localized name, personality, style, and interests strings into `Localizable.xcstrings`.
+
+### Q: How do I implement a new ReAct tool?
+1. Create a struct conforming to `AITool` in `Chat_Buddy_iOS/Services/Chat/`:
+   ```swift
+   struct CalculatorTool: AITool {
+       let name = "calculator"
+       let description = "Evaluates a mathematical expression. Arguments: math expression string."
+       func execute(arguments: String) async throws -> String { ... }
+   }
+   ```
+2. Register the tool in `ToolExecutorService.init()`:
+   ```swift
+   register(CalculatorTool())
+   ```
+3. Update the Task Agent system prompt instructions in `AIPipeline.swift` to document the new tool signature.
+
+### Q: Why are API keys missing when inspecting UserDefaults or backup JSON files?
+This is by design. `APIConfig`'s `CodingKeys` purposefully omit `apiKey`. API keys are stored exclusively in the iOS Keychain via `KeychainService` under `"api-key-active"` and `"api-key-profile-<UUID>"`.
