@@ -10,6 +10,9 @@
 ![iOS 26+](https://img.shields.io/badge/iOS-26.0+-black?style=flat&logo=apple)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-100%25-blue?style=flat&logo=swift)
 ![License MIT](https://img.shields.io/badge/License-MIT-green.svg)
+[![llms.txt](https://img.shields.io/badge/llms.txt-standardized-blueviolet)](llms.txt)
+
+> 🤖 **LLM 与 AI 搜索规范**: 遵循 [llmstxt.org](https://llmstxt.org) 标准的完整技术架构与规范请参阅 [`llms.txt`](llms.txt) 与 [`llms-full.txt`](llms-full.txt)。
 
 ## ✨ 核心特性
 
