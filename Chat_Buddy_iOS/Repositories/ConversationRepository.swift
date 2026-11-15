@@ -118,7 +118,9 @@ public actor ConversationRepository {
                 let convMessages = messages
                     .filter { $0.conversationId == conversation.id && $0.deletedAt == nil }
                     .sorted { $0.sequence < $1.sequence }
-                guard let last = convMessages.last else { continue }
+                // A synced conversation is navigable before its first
+                // message (and after all messages have been deleted).
+                let last = convMessages.last
                 let myRead = members
                     .first { $0.conversationId == conversation.id }
                     .map(\.lastReadSequence) ?? 0
@@ -129,7 +131,7 @@ public actor ConversationRepository {
                 } else if conversation.type == "hidden_ai_direct" {
                     continue // never cached, never listed
                 } else {
-                    title = actorNames[last.senderActorId]
+                    title = last.flatMap { actorNames[$0.senderActorId] }
                         ?? conversation.publicName
                 }
                 items.append(
@@ -138,12 +140,16 @@ public actor ConversationRepository {
                         type: conversation.type,
                         publicName: title,
                         unreadCount: unread,
-                        lastMessagePreview: last.content,
-                        lastActivityAt: last.createdAt,
+                        lastMessagePreview: last?.content,
+                        lastActivityAt: last?.createdAt ?? conversation.createdAt,
                     ),
                 )
             }
-            return items
+            return items.sorted {
+                let lhs = $0.lastActivityAt ?? .distantPast
+                let rhs = $1.lastActivityAt ?? .distantPast
+                return lhs == rhs ? $0.id < $1.id : lhs > rhs
+            }
         }
     }
 
