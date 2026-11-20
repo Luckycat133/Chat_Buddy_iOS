@@ -4,11 +4,30 @@
 
 ---
 
-## 1. Executive Summary & Overview
+## Current cloud runtime: read before the legacy map
+
+A fresh installation defaults `CBUseCloudRuntime` to `true` in `Chat_Buddy_iOS/Chat_Buddy_iOSApp.swift`. It bootstraps `CloudAppState`, which owns authenticated HTTP, realtime, repositories and SwiftData caching. The cloud contract places character intelligence, authoritative memory and proactive scheduling on the server. Hosted-demo testers do not configure provider API keys.
+
+Configure `AppEnvironment.resolve` via Info.plist: `CBEnvironment=testflight` or `production` takes precedence and selects the coded TestFlight environment; otherwise `CBAPIBaseURL` and optional `CBRealtimeURL` select custom endpoints. Without these, defaults are `http://localhost:8080` and `ws://localhost:8080/v1/realtime`. These are source configuration values, not verified deployed services. The current unauthenticated root includes development sign-in; do not infer production auth acceptance.
+
+The primary Settings view disables legacy API configuration. Do not direct testers there or restore client-side AI authority to bypass a cloud failure. Keep legacy data readable for authorized import. Keychain session credentials and legacy provider keys serve different purposes.
+
+**Scope of the remainder:** sections 1–11 and the implementation FAQ below are a legacy native-port map, not the default cloud architecture or acceptance evidence. In particular, local ReAct, responder selection, UserDefaults chat storage and local Moments generation are legacy-only. UI implementation descriptions do not prove performance or acceptance. Build commands require an actually available destination; no simulator, cloud service, APNs, or TestFlight validation was performed for this correction.
+
+Source references:
+- [App entry](Chat_Buddy_iOS/Chat_Buddy_iOSApp.swift)
+- [Cloud state](Chat_Buddy_iOS/App/CloudAppState.swift)
+- [Environment resolution](Chat_Buddy_iOS/App/AppEnvironment.swift)
+- [Settings](Chat_Buddy_iOS/Features/Settings/SettingsView.swift)
+- [Current checkout evidence](.agents/skills/chat-buddy-ios-demo-development/references/CURRENT_CHECKOUT.md)
+
+---
+
+## 1. Legacy Executive Summary & Overview
 
 **Chat Buddy iOS** is a fully native, open-source AI companion application built exclusively for Apple platforms using **SwiftUI 100%**, **Swift 6 Concurrency**, and iOS platform frameworks. It serves as the native mobile evolution of the Chat Buddy ecosystem, transitioning from the legacy web application into a localized, high-performance, battery-conscious personal companion platform.
 
-The system features:
+The retained legacy implementation includes (not cloud acceptance evidence):
 - **19 Built-in Personas**: 13 diverse social companions (e.g., Luna, Max, Bella, Hatsune Miku, Rem, Gojo Satoru) and 6 specialized task agents (Coder, Muse, Scholar, Sensei, Aurora, Pixel), with support for user-defined custom personas.
 - **Multi-Persona Group Conversations**: Real-time group rooms where multiple AI personas interact with the user and each other. The orchestration engine dynamically handles turn-taking, pacing, and asynchronous responses without cross-persona race conditions.
 - **Client-Side ReAct Tool Execution**: An autonomous Reason + Act pipeline for Task Agents capable of parsing tool invocation tags (`[TOOL: name]args[/TOOL]`), executing local or external HTTP tools (such as the DuckDuckGo Instant Answer API), and synthesizing final answers in a multi-stage reasoning loop without requiring server-side function calling.
@@ -18,7 +37,7 @@ The system features:
 
 ---
 
-## 2. System Architecture & Design Patterns
+## 2. Legacy System Architecture & Design Patterns
 
 Chat Buddy iOS adopts a **Clean MVVM (Model-View-ViewModel)** architectural pattern optimized for SwiftUI's declarative state-driven rendering and modern Swift Concurrency.
 
@@ -84,7 +103,7 @@ Chat Buddy iOS adopts a **Clean MVVM (Model-View-ViewModel)** architectural patt
 
 ---
 
-## 3. Directory & File Organization
+## 3. Legacy Directory & File Organization
 
 The project codebase follows a modular directory layout:
 
@@ -164,7 +183,7 @@ Chat_Buddy_iOS/
 
 ---
 
-## 4. Domain Models & Data Schemas
+## 4. Legacy Domain Models & Data Schemas
 
 ### 4.1. Persona & PersonaStore
 
@@ -335,7 +354,7 @@ struct APIConfig: Codable, Equatable {
 
 ---
 
-## 5. Multi-Persona Orchestration Engine
+## 5. Legacy Multi-Persona Orchestration Engine
 
 In multi-persona group chats, users can add any number of AI companions into a shared room. The orchestration system simulates realistic group chat dynamics without message collision.
 
@@ -372,7 +391,7 @@ Select Responders: [Luna, Max]
 
 ---
 
-## 6. ReAct Tool Execution Protocol
+## 6. Legacy ReAct Tool Execution Protocol
 
 For Task Agent personas (Coder, Scholar, Muse, Sensei, Aurora, Pixel), Chat Buddy iOS implements a native client-side **ReAct (Reason + Act)** loop. This allows autonomous tool execution without requiring remote backend function calling infrastructure.
 
@@ -433,7 +452,7 @@ struct WebSearchTool: AITool {
 
 ---
 
-## 7. iOS BackgroundTasks Framework & Moments
+## 7. Legacy iOS BackgroundTasks Framework & Moments
 
 The **Moments** feed represents an asynchronous social timeline where AI companions share status updates, react to user posts, celebrate birthdays, and commemorate holidays.
 
@@ -507,14 +526,14 @@ Animations automatically downgrade or suspend when `ThemeManager.animationIntens
 
 ---
 
-## 9. Security & Apple Keychain Implementation
+## 9. Legacy Security & Apple Keychain Implementation
 
 A primary security directive of Chat Buddy iOS is protecting user API keys and private tokens.
 
-### Security Guarantees
+### Legacy security implementation notes (not a guarantee against compromise)
 - **No Plaintext Persistence**: API keys are never stored in `UserDefaults`.
 - **Backup Sanitization**: When users export data via `DataExporter`, API keys are omitted by default or encrypted.
-- **Hardware Isolation**: Credentials are saved into the Secure Enclave-backed Apple Keychain using the Security framework (`kSecClassGenericPassword`).
+- **Hardware Isolation**: Credentials are saved into Apple Keychain using the Security framework (`kSecClassGenericPassword`).
 
 ### Low-Level Keychain Implementation
 
@@ -534,7 +553,7 @@ For enhanced security, users can enable Face ID / Touch ID protection for their 
 
 ---
 
-## 10. Memory, Context Compression & Prompt Engineering
+## 10. Legacy Memory, Context Compression & Prompt Engineering
 
 The conversation runtime incorporates multi-layered memory and context optimizations to deliver personalized interactions while remaining within LLM token limits.
 
@@ -569,7 +588,7 @@ When intercepted:
 
 ---
 
-## 11. Storage & Persistence Mapping
+## 11. Legacy Storage & Persistence Mapping
 
 All non-sensitive application state is persisted through `StorageService`, which wraps `UserDefaults` with namespaced keys:
 
@@ -630,7 +649,7 @@ xcodebuild test \
 
 ---
 
-## 13. AI Agent Reference & Implementation FAQ
+## 13. Legacy AI Agent Reference & Implementation FAQ
 
 ### Q: How do I add a new built-in AI persona?
 1. Open `Chat_Buddy_iOS/Models/PersonaStore.swift`.
