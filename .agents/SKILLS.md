@@ -17,8 +17,7 @@ Load only the Skill whose trigger matches the current task. A Skill may be reuse
 | `swift-testing` | Swift Testing and XCTest design, migration, and failure diagnosis |
 | `ios-26-platform` | iOS 26 platform APIs, Liquid Glass adoption, and SDK availability boundaries |
 | `ios-hig` | Apple Human Interface Guidelines for iOS layout, controls, navigation, and typography |
-| `launch` | App & TestFlight launch planning, go-to-market checklists, and release announcements |
-| `ai-seo` | AI search visibility (GEO/AEO), `llms.txt`, and citation optimization |
+| `distribution-publisher` (Claude Agent) | Dedicated agent (`~/.claude/agents/distribution-publisher.md`) for MCP/Skill registries, ClawHub, `skills.sh`, GEO/`llms.txt`, and launch copy |
 
 ## Maintenance rules
 

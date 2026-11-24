@@ -96,6 +96,7 @@ pnpm-debug.log*
 # AI Agent & Meta
 .gemini/
 *.json.bak
+.claude/settings.local.json
 
 # Web Reference Project
 Chat_Buddy_Web/
