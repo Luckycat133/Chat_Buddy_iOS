@@ -15,6 +15,10 @@ Load only the Skill whose trigger matches the current task. A Skill may be reuse
 | `ios-accessibility` | VoiceOver, Dynamic Type, accessibility semantics, and UI audits |
 | `swiftui-performance` | SwiftUI performance diagnosis and profiling |
 | `swift-testing` | Swift Testing and XCTest design, migration, and failure diagnosis |
+| `ios-26-platform` | iOS 26 platform APIs, Liquid Glass adoption, and SDK availability boundaries |
+| `ios-hig` | Apple Human Interface Guidelines for iOS layout, controls, navigation, and typography |
+| `launch` | App & TestFlight launch planning, go-to-market checklists, and release announcements |
+| `ai-seo` | AI search visibility (GEO/AEO), `llms.txt`, and citation optimization |
 
 ## Maintenance rules
 

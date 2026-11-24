@@ -36,25 +36,25 @@ No A01–A25 product scenario is newly marked accepted by this documentation rev
 
 ### R0.1 — repair the actual message wire body (F01)
 
-- [ ] Give pre-encoded JSON a raw-body request path, or decode the stored mutation into the typed request before encoding once. Do not change the server contract to accept accidental Base64 strings.
-- [ ] Add `URLProtocol` request capture through the real `enqueueMessage` -> `flushOne` path. Assert an object with `content`, stable `clientIdempotencyKey`, and the intended idempotency header.
-- [ ] Test timeout after server acceptance, retry, 409 conflict and realtime echo; retain one logical send and visible failure/conflict state.
-- [ ] Restart a file-backed test store and replay the same key. An in-memory reducer test alone does not satisfy A23.
+- [x] Send the stored, pre-encoded JSON bytes through `HTTPClient.sendJSON`.
+- [x] Capture the actual `enqueueMessage` → `flushOne` request with `URLProtocol`. Assert the JSON object, `content`, `clientIdempotencyKey`, and `Idempotency-Key`.
+- [x] Simulate a lost response and retry the same message. Check failure and HTTP 409 through the chat-row projection, then apply the same authoritative echo twice through delta sync.
+- [x] Reopen a file-backed SwiftData store and replay the exact bytes and key. See [E03](VALIDATION_EVIDENCE.md#e03--r01-local-simulator-regression).
+- [ ] Observe an app restart, cloud reconnect, and visible realtime echo against the hosted service for A23.
 
 ### R0.2 — unify session/cache/task lifetime (F02/F07)
 
-- [ ] Introduce one teardown path used by logout, revocation, deletion and account switch: stop old socket/sync/send tasks, invalidate old work, detach device ownership as required, clear `AuthSession` material and dispose/isolate the cache.
-- [ ] Choose account-partitioned stores or account-scoped rows and queries; prove that read paths are isolated, not only outbox and cursor records.
-- [ ] Do not delete guessed SQLite filenames under a live `ModelContainer`. Resolve the actual configured store location and safely rebuild/release its owners; surface cleanup failures.
-- [ ] A/B regression: A has cached private messages and queued mutations; sign out, sign into B offline/online, restart. B must never see A's rows, routes or queued sends; delayed A callbacks must be ignored.
-- [ ] Deletion failure stays explicitly failed/pending/retryable. Server deletion acceptance and local cleanup are separate outcomes; repeat deletion is idempotent.
+- [x] Scope the SwiftData stores, transport and old callbacks to the active account. Sign-out, revocation and accepted deletion use one teardown path. Switching accounts stops the previous scope before using the new session.
+- [x] Preserve owner-tagged outbox records during migration from the former shared store. SwiftData erases the configured current store after the server acknowledges a deletion request.
+- [x] Verify A/B, restart, delayed A response, retryable deletion failure, one lost-receipt replay and account-scoped erase in the simulator with fixture transport. See [E04](VALIDATION_EVIDENCE.md#e04--r02-and-r03-local-simulator-regression).
+- [ ] Verify the same A/B scene against the hosted service, including device ownership. Observe a production deletion receipt and scheduled server purge. Test host restart after an unconfirmed deletion and cleanup failure recovery on the release configuration.
 
 ### R0.3 — production auth and deterministic bootstrap (F03/F04)
 
-- [ ] Cloud loading/error states never select `LegacyAppRoot` merely because `cloud == nil`; render retry/recovery and show `cloudError` safely.
-- [ ] Wire Apple sign-in into the normal auth route; gate dev sign-in/legacy runtime to explicitly internal builds or supported internal configuration.
-- [ ] Install the HTTP unauthorized handler and prove single-flight refresh, rotation, retry-once and terminal revocation behavior. Do not infer refresh from Keychain reload or a non-nil expired token.
-- [ ] Keep `.offline` when initial sync fails; successful reconnect clears it through the same boot state machine, and onboarding failures do not silently become completed onboarding.
+- [x] Show cloud startup progress and retry on startup failure. The release client uses the cloud route. Diagnostic sign-in and the legacy root remain selectable in debug builds.
+- [x] Wire the native Apple sign-in action and single-flight HTTP refresh into the cloud root. The fixture proves concurrent 401 delivery, token rotation, authenticated replay and revocation.
+- [x] Honor failed sync and onboarding reads. A successful retry runs the normal post-sync routing.
+- [ ] Verify signed Apple authorization with the matching Web endpoint, provisioned app identity and hosted configuration. Exercise the release UI and actual reconnect against the hosted service.
 
 **R0 exit:** new transport/lifecycle tests pass plus the existing unit target; cloud startup, actual send and A/B isolation pass in the simulator. Record exact commits, toolchain and failing/passing cases before closing F01–F04/F07. No physical APNs claim is made at R0.
 

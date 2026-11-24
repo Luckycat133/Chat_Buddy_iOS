@@ -5,7 +5,7 @@
 **Source commit:** `24ab6b7aa1781388a48cd73fc6cbcfc76ae4c770`  
 **Shared product contract:** `2026-08-18-demo-v1` (unchanged)
 
-This is an implementation review and evidence ledger. It does not replace or relax `ACCEPTANCE.md`. All source paths below refer to the reviewed commit; future repairs must attach new evidence rather than rewriting this baseline as though it passed.
+This is an implementation review and evidence ledger. The source-inspection findings refer to the reviewed commit. Subsequent repairs have separately dated results and follow `ACCEPTANCE.md`.
 
 ## E01 — historical CI, verified from GitHub metadata and workflow
 
@@ -40,6 +40,69 @@ precondition(json is String)
 
 Observed: `wire is JSON object: false`; `wire is base64 string: true`. This confirms the encoding mechanism underlying F01; it does not claim a live endpoint rejection was observed. The Foundation implementation also declares `.base64` as the default Data encoding strategy: [Swift Foundation JSONEncoder](https://github.com/swiftlang/swift-foundation/blob/main/Sources/FoundationEssentials/JSON/JSONEncoder.swift).
 
+## E03 — R0.1 local simulator regression
+
+On 2026-11-15, tested the local transport and test changes on iOS commit
+`11b6f2a7a4a3f2ec6a491dacc8356dacab2c33a6`, using Xcode 27.2 (27B52)
+and an arm64 iPhone 17e simulator on iOS 27.2 (24B8117). Request and replay
+fixtures follow `server/api/messages.ts` in the local Web repository at
+`be4d237eeeaf80b7116b0445b01bfcc4c0933fcb`.
+
+`HTTPClient.sendJSON` writes the outbox bytes directly to `URLRequest.httpBody`.
+The focused `Chat_Buddy_iOSTests/OutboxTransportTests` selection passed both
+tests in `Focused.xcresult`, with simulator ad-hoc signing
+(`CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`).
+
+- A simulated lost response leaves one failed message. Reopening the file-backed
+  store and flushing again sends the same JSON object bytes, content, reply ID,
+  and idempotency key in both the body and header. The fixture returns the
+  original message ID and sequence.
+- A 409 leaves one conflict row and prevents automatic replay. Applying the
+  same server message twice through `SyncCoordinator` leaves a single delivered
+  row and settles the outbox item.
+
+The complete `Chat_Buddy_iOSTests` selection passed 246 tests with zero failures
+and zero skips in `Unit.xcresult`, including both new cases. To reproduce, run
+the `xcodebuild test` command below using the iOS 27.2 simulator and
+`-parallel-testing-enabled NO`. For the focused run, append
+`/OutboxTransportTests` to the `-only-testing:Chat_Buddy_iOSTests` selector.
+
+Full A23 still requires hosted send/reconnect, a foreground conversation, and
+the real realtime callback. Session teardown and account switching remain in
+R0.2. This run used ephemeral HTTP fixtures and disposable stores.
+
+## E04 — R0.2 and R0.3 local simulator regression
+
+On 2026-11-15, Xcode 27.2 (27B52) ran all 251 unit tests on an arm64 iPhone
+17e simulator on iOS 27.2. The local changes used iOS base `11b6f2a` and the
+deletion contract in Web base `be4d237e`. All 251 tests passed in
+`FinalUnit.xcresult` with ad-hoc simulator signing. The same iOS tree also
+built in Release for the simulator. The tests used isolated `URLProtocol`
+fixtures and temporary SwiftData stores.
+
+- A and B used the same conversation ID in separate stores. A late HTTP
+  response and stale composer could not target B. B restarted offline, read
+  its own cached row, and never saw A's outbox item or pending destination.
+- The former common store migrated only rows explicitly tagged with A's
+  account ID. The migration preserved their bodies, states, and original
+  idempotency identities. Rows without an attributable owner stayed in the
+  former store and remain outside the active account's cache.
+- An HTTP 503 kept A signed in with a retry action. The acknowledged
+  `POST /v1/account/delete` cleared cloud Keychain material and erased A's
+  configured SwiftData data. A new store instance showed zero A messages
+  and retained B's message. The server response indicates accepted and
+  pending deletion. A lost response with a timed-out connection reused
+  the original authorization and body once. The test observed the receipt
+  and no credential refresh.
+- Two protected requests with an expired credential reused one refresh
+  request. Rotation and a single replay succeeded. A later rejected refresh
+  invalidated the active scope and returned to sign-in.
+
+The suite did not exercise Apple authorization, app provisioning, a hosted
+account, physical APNs, or final server-side data purge. At the inspected
+Web source, `server/api/auth.ts` still does not register `/v1/auth/apple`.
+F02, F03, F04 and F07 require the remaining hosted acceptance in the roadmap.
+
 ## Source-inspection findings (open at the baseline)
 
 ### F01 — P0: message outbox body is encoded twice
@@ -47,6 +110,8 @@ Observed: `wire is JSON object: false`; `wire is base64 string: true`. This conf
 Evidence: `Chat_Buddy_iOS/Repositories/ConversationRepository.swift`, `enqueueMessage` and `flushOne`; `Chat_Buddy_iOS/Networking/HTTPClient.swift`, `buildRequest`.
 
 `enqueueMessage` encodes `SendMessageBody` to Data. `flushOne` passes that Data as the generic request body. The client encodes it again, producing a JSON Base64 string instead of the expected message object. E02 reproduces the mechanism. Fix with an explicit raw-JSON transport path or a typed decoded mutation and exactly one encoding. Require a request-capture test through the real repository-to-HTTP route, with the same idempotency key across retry.
+
+E03 records the subsequent client repair and simulator test scope.
 
 ### F02 — P0: account lifetime does not isolate cached reads and old work
 
