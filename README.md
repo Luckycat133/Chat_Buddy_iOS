@@ -32,11 +32,11 @@ Background refresh is opportunistic: iOS decides when `BackgroundTasks` run, so 
 ## 🛠 Tech Stack
 
 - **UI Framework**: SwiftUI
-- **State Model**: `@Observable` + Environment injection
+- **State Model**: `@Observable` + Environment injection (`CloudAppState` for cloud runtime, legacy stores preserved behind `CBUseCloudRuntime`)
 - **Core Engine**: Swift Concurrency (`actor`, `async/await`)
 - **Background Processes**: iOS `BackgroundTasks` (`BGAppRefreshTask`, `BGProcessingTask`)
 - **Visual Effects**: SwiftUI Canvas + SpriteKit
-- **Data Persistence**: `StorageService` (`UserDefaults`) + JSON export/import backup
+- **Data Persistence**: SwiftData local cache + Keychain-backed `AuthSession` for cloud runtime, plus `StorageService` (`UserDefaults`) and JSON export/import backup for legacy data
 
 ## 📦 How to Build
 
@@ -45,7 +45,7 @@ Background refresh is opportunistic: iOS decides when `BackgroundTasks` run, so 
 3. The project uses standard iOS frameworks and requires no complex third-party setup.
 4. Set your run destination and hit `Cmd + R`.
 
-Pull requests are also built and unit-tested on GitHub Actions using the macOS 26 runner and Xcode 26.5.
+Pull requests are also built and unit-tested on GitHub Actions using the macOS 26 runner and Xcode 26.5 (244 unit tests across 26 suites passing on CI as of `v0.11.2`).
 
 ### Terminal Build & Test
 
@@ -62,6 +62,14 @@ xcodebuild -project Chat_Buddy_iOS.xcodeproj \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   test
 ```
+
+## 📚 Documentation
+
+See the [documentation index](docs/README.md) for architecture ([ARCHITECTURE.md](docs/ARCHITECTURE.md)), development setup ([DEVELOPMENT.md](docs/DEVELOPMENT.md)), feature parity notes, and Web-to-iOS migration records.
+
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) ([简体中文](CHANGELOG_zh.md)) for full version history (latest documented milestone: **v0.11.3**).
 
 ## 📄 License
 

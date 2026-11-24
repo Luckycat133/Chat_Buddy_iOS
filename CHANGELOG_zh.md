@@ -7,9 +7,45 @@
 
 ---
 
-## [Unreleased] — 云端客户端基座（2026-09-15）
+## [Unreleased]
 
-> 按 demo-development skill 落地的 cloud-first 运行时：HTTP/鉴权/实时/SwiftData 同步基座。初稿由 MiniMax-M3 生成，经 glm-5.3-flash 审查修复（8 个编译级 + 9 个逻辑缺陷全部修复；全部 35 个改动文件 `swiftc -parse` 0 错误；Xcode 真编待补）。
+---
+
+## [0.11.3] - 2026-11-15
+
+### 文档
+- **AI 与大模型文档规范（GEO）**：新增符合 `llmstxt.org` 标准的 `llms.txt` 与 `llms-full.txt`，并在 `README.md` / `README_zh.md` 中补充入口链接（#6，`24ab6b7`）。
+- **云端演示路线图与验证证据对齐**：以 `24ab6b7` 为基线核对 `chat-buddy-ios-demo-development` 技能文档（`SKILL.md`、`CURRENT_CHECKOUT.md`、`ROADMAP.md`、`VALIDATION_EVIDENCE.md`），明确区分源码实现、单测 CI 结果与待真机/云端验收项（`11b6f2a`）。
+
+---
+
+## [0.11.2] - 2026-10-25
+
+### 变更
+- **CI 全量单测跑通与配置维护**：将 `.github/workflows/ios-ci.yml` 从 `CODE_SIGNING_ALLOWED=NO` 切换为 ad-hoc 签名，解决模拟器上 Keychain `SecItem` 调用返回 `-34018`（`errSecMissingEntitlement`）的问题，hosted iOS 单元测试全量绿灯（**244 个测试 / 26 个套件全部通过，0 失败，0 崩溃**；`7075ab4`）。同步更新项目 Agent 配置、规则与技能引用（`9d46abf`）。
+- **仓库清理**：移除误提交的本地复现调试产物 `workspace/repro_setasync*`，并在 `.gitignore` 中忽略仓库根 `workspace/`（`221e104`、`7207b5d`）。
+
+### 修复
+- **非主线程释放 double-free 崩溃**：为受 `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` 影响的 30 个类型补充 `nonisolated deinit {}`（经 `swiftc -emit-sil` 复核，带 `swift_task_deinitOnExecutor` 的类型数从 30 降至 0），避免非主线程释放时重复释放（#5，`7207b5d`、`7075ab4`）。
+- **JSON 编解码并发安全**：将进程级单例 `JSONEncoder.default` 改为每次访问返回新实例，消除主线程与并发 Task/Actor 共享非线程安全编解码器的竞态（`7075ab4`）。
+- **RAG 长段切分兜底**：为 `RAGService.chunkText` 补充 `splitByWords` 兜底逻辑，解决无句号长段落无法切分的问题（`7075ab4`）。
+- **联系人请求分类过滤**：修复 `ContactsClassifier.project` 将他人之间的 pending 请求误判为 inbound 的缺陷（`7075ab4`）。
+- **单元测试断言修正**：修正 5 处与实现不符的测试断言（`7075ab4`）。
+
+---
+
+## [0.11.1] - 2026-09-25
+
+### 新增
+- **云端同步引擎补全**：新增 `EventApplier`、`ConflictResolver` 与 `RealtimeSequencer`，并完善 `SyncCoordinator`、`ConversationRepository`、`MomentsRepository` 的端到端同步编排（`d304fbf`）。
+- **联系人、建群向导与设备设置**：新增 `ContactsView`、`ContactsRepository`、`GroupCreationWizardView`、`MeTabView`、`DeviceSettingsStore`、`AuthService`、`AccountService`、`MediaUploadService`、`FeatureLogic`、`RemoteDTOs` 与 `ViewData`（`d304fbf`）。
+- **本地化与单元测试扩展**：补全云端功能对应的 `Localizable.xcstrings` 词条，并新增 9 套单元测试（`CloudFeatureTests`、`ConflictResolverTests`、`ContactsRepositoryTests`、`DeviceSettingsStoreTests`、`EventApplierTests`、`OnboardingHydrationTests`、`RealtimeSequencerTests`、`RemoteDTOFixtureTests`、`ViewDataMappingTests`）及扩展 `OutboxStoreTests`（`d304fbf`）。
+
+---
+
+## [0.11.0] - 2026-09-18
+
+> 按 demo-development skill 落地的 cloud-first 运行时：HTTP/鉴权/实时/SwiftData 同步基座，包含静态审查修复与多轮 Xcode CI 类型检查修复。
 
 ### 新增 — 云端运行时
 - **CloudAppState** — cloud-first 应用运行时（启动阶段、dev-signin、初始同步、realtime 接线），旧本地运行时经 `CBUseCloudRuntime` 保留作 fallback。
@@ -25,12 +61,12 @@
 ### 新增 — 测试
 - `OutboxStoreTests`、`CloudClientTests`、`SyncCursorCodecTests`。
 
-### 修复 — 审查补丁（编译级）
-- `self.cloud = = state` 笔误；重复 `init(conversationId:)`；全模块重复 `AppTab` 枚举（新变体改名 `CloudAppTab`）；`??` autoclosure 中的 `await`；`APIErrorCode.init(rawValue:)` 无限递归（改显式 switch 映射）；`ConversationListItem` 补 Identifiable；`MeTab` 跨 actor 异步取值；`private(set) stage` 赋值改走 `CloudAppState.transition(to:)`。
+### 修复 — 审查补丁与 Xcode 编译兼容
+- **静态审查（编译级）**：`self.cloud = = state` 笔误；重复 `init(conversationId:)`；全模块重复 `AppTab` 枚举（新变体改名 `CloudAppTab`）；`??` autoclosure 中的 `await`；`APIErrorCode.init(rawValue:)` 无限递归（改显式 switch 映射）；`ConversationListItem` 补 Identifiable；`MeTab` 跨 actor 异步取值；`private(set) stage` 赋值改走 `CloudAppState.transition(to:)`。
+- **静态审查（逻辑）**：outbox flush 接通（原为空闭包）；realtime 事件/断流触发增量同步（原被丢弃）；`.offline` 状态不再被 bootstrap/dev-signin 覆盖；引导会话发现实现（发消息不再死路）；Moments 发布/评论输入绑定（原按钮空转）；统一 `isFromHuman`（原两套矛盾约定）；legacy 数据先导入后清除（登出不再删导入源）；推送注册改 `UIApplication.shared`；结构化回传改真 JSON（原双层编码）；清理死代码（`AppStateBox`、`_placeholder`）；人类消息气泡靠右对齐。
+- **Xcode 真编类型检查修复（`e1f3d80`–`b3612bd`）**：`OutboxStore` 中 `#Predicate` 枚举 rawValue 提升；旧请求层 `APIError` 改名 `LegacyAPIError`；修正 `MainActor.run` 闭包签名与 `RealtimeClient` `nonisolated` ISO-8601 解码辅助方法；`MemberImportVisibility` 下补齐 `import Combine`；`SignInWithAppleView` 改用原生 `SignInWithAppleButton`；重命名 `OnboardingMessageBubble`；`LegacyAppRoot` 适配 `@Observable` 存储；`AnyCodableJSON.decodeValue` 改为 static；修正 `ServerPayload.init(from:)` 解码与 `.environmentObject(cloud)` 注入。
 
-### 修复 — 审查补丁（逻辑）
-- outbox flush 接通（原为空闭包）；realtime 事件/断流触发增量同步（原被丢弃）；`.offline` 状态不再被 bootstrap/dev-signin 覆盖；引导会话发现实现（发消息不再死路）；Moments 发布/评论输入绑定（原按钮空转）；统一 `isFromHuman`（原两套矛盾约定）；legacy 数据先导入后清除（登出不再删导入源）；推送注册改 `UIApplication.shared`；结构化回传改真 JSON（原双层编码）。
-- 清理死代码（`AppStateBox`、`_placeholder`）；人类消息气泡靠右对齐。
+---
 
 ## [0.10.0] — 2026-03-30
 

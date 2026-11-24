@@ -7,9 +7,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased] — Cloud Client Foundation (2026-09-15)
+## [Unreleased]
 
-> Cloud-first runtime for the iOS app per the demo-development skill: HTTP/auth/realtime/SwiftData-sync foundation with audited fixes. Initial draft by MiniMax-M3, audited and fixed with glm-5.3-flash (8 compile-level + 9 logic defects fixed; all 35 touched files pass `swiftc -parse` with 0 errors; Xcode build still pending on this machine).
+---
+
+## [0.11.3] - 2026-11-15
+
+### Docs
+- **AI & LLM documentation (GEO)**: Added `llms.txt` and `llms-full.txt` following the `llmstxt.org` specification and linked them from `README.md` and `README_zh.md` (#6, `24ab6b7`).
+- **Cloud demo roadmap & evidence reconciliation**: Reconciled `chat-buddy-ios-demo-development` skill docs (`SKILL.md`, `CURRENT_CHECKOUT.md`, `ROADMAP.md`, `VALIDATION_EVIDENCE.md`) against baseline `24ab6b7`, separating source implementation, unit CI results, and unverified device/cloud acceptance items (`11b6f2a`).
+
+---
+
+## [0.11.2] - 2026-10-25
+
+### Changed
+- **CI & agent configuration**: Switched `.github/workflows/ios-ci.yml` from `CODE_SIGNING_ALLOWED=NO` to ad-hoc signing so Keychain `SecItem` calls succeed on simulators (no longer failing with `-34018` / `errSecMissingEntitlement`), bringing the full hosted iOS unit test suite to green (**244 tests / 26 suites passing, 0 failures, 0 crashes**; `7075ab4`). Updated project agent configs, rules, and skill references (`9d46abf`).
+- **Repository hygiene**: Removed accidentally committed local debug files (`workspace/repro_setasync*`) and ignored root `workspace/` in `.gitignore` (`221e104`, `7207b5d`).
+
+### Fixed
+- **Non-main-thread deallocation double-free**: Added `nonisolated deinit {}` to 30 types affected by `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` (verified via SIL emission: `swift_task_deinitOnExecutor` count reduced from 30 to 0), preventing double-free crashes when deallocated off the main thread (#5, `7207b5d`, `7075ab4`).
+- **Concurrent JSON encoding safety**: Replaced shared singleton `JSONEncoder.default` with per-access instances so concurrent tasks/actors do not race on non-thread-safe encoders (`7075ab4`).
+- **RAG text chunking**: Added `splitByWords` fallback in `RAGService.chunkText` so long paragraphs without sentence-ending punctuation are properly chunked (`7075ab4`).
+- **Contacts classification**: Filtered out pending requests between third-party users in `ContactsClassifier.project` so they are no longer misclassified as inbound requests (`7075ab4`).
+- **Unit test assertions**: Aligned 5 mismatched unit test expectations with implementation behavior (`7075ab4`).
+
+---
+
+## [0.11.1] - 2026-09-25
+
+### Added
+- **Cloud sync engine**: Added `EventApplier`, `ConflictResolver`, and `RealtimeSequencer`, and completed end-to-end sync orchestration in `SyncCoordinator`, `ConversationRepository`, and `MomentsRepository` (`d304fbf`).
+- **Contacts, group wizard & device settings**: Added `ContactsView`, `ContactsRepository`, `GroupCreationWizardView`, `MeTabView`, `DeviceSettingsStore`, `AuthService`, `AccountService`, `MediaUploadService`, `FeatureLogic`, `RemoteDTOs`, and `ViewData` (`d304fbf`).
+- **Localization & test coverage**: Expanded `Localizable.xcstrings` for cloud features and added 9 new unit test suites (`CloudFeatureTests`, `ConflictResolverTests`, `ContactsRepositoryTests`, `DeviceSettingsStoreTests`, `EventApplierTests`, `OnboardingHydrationTests`, `RealtimeSequencerTests`, `RemoteDTOFixtureTests`, `ViewDataMappingTests`) plus expanded `OutboxStoreTests` (`d304fbf`).
+
+---
+
+## [0.11.0] - 2026-09-18
+
+> Cloud-first runtime for the iOS app per the demo-development skill: HTTP/auth/realtime/SwiftData-sync foundation with audited fixes and subsequent Xcode CI type-check resolutions.
 
 ### Added — Cloud Runtime
 - **CloudAppState** — cloud-first app runtime (boot stages, dev-signin, initial sync, realtime wiring) with legacy fallback preserved behind `CBUseCloudRuntime`.
@@ -25,12 +61,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added — Tests
 - `OutboxStoreTests`, `CloudClientTests`, `SyncCursorCodecTests`.
 
-### Fixed — Audit Pass (compile-level)
-- `self.cloud = = state` typo; duplicate `init(conversationId:)`; module-wide duplicate `AppTab` enum (new variant renamed `CloudAppTab`); `await` inside `??` autoclosure; infinite-recursion `APIErrorCode.init(rawValue:)` (now explicit switch mapping); `ConversationListItem` Identifiable conformance; actor-isolated async access in `MeTab`; `private(set) stage` writes routed through `CloudAppState.transition(to:)`.
+### Fixed — Audit Pass & Xcode Build Compatibility
+- **Static audit (compile-level)**: `self.cloud = = state` typo; duplicate `init(conversationId:)`; module-wide duplicate `AppTab` enum (new variant renamed `CloudAppTab`); `await` inside `??` autoclosure; infinite-recursion `APIErrorCode.init(rawValue:)` (now explicit switch mapping); `ConversationListItem` Identifiable conformance; actor-isolated async access in `MeTab`; `private(set) stage` writes routed through `CloudAppState.transition(to:)`.
+- **Static audit (logic)**: Outbox flush wired (was a no-op closure); realtime events/gaps trigger delta sync (was discarded); `.offline` stage no longer overwritten by bootstrap/dev-signin; onboarding conversation discovery implemented (send no longer dead-ends); Moments composer + comment input bound (buttons were no-ops); unified `isFromHuman` helper (was two contradictory conventions); legacy data now imported before erase (sign-out no longer deletes the import source); push registration via `UIApplication.shared`; structured results post real JSON (was double-encoded). Dead code removed (`AppStateBox`, `_placeholder`); human chat bubbles right-aligned per platform convention.
+- **Xcode type-checking (`e1f3d80`–`b3612bd`)**: Hoisted `#Predicate` enum raw values in `OutboxStore`; renamed legacy `APIError` to `LegacyAPIError`; fixed `MainActor.run` closure signatures and `nonisolated` ISO-8601 decoder helper; added direct `import Combine` under `MemberImportVisibility`; migrated `SignInWithAppleView` to native `SignInWithAppleButton`; renamed `OnboardingMessageBubble`; updated `LegacyAppRoot` for `@Observable` stores; made `AnyCodableJSON.decodeValue` static; fixed `ServerPayload.init(from:)` `JSONValue` decoding and `.environmentObject(cloud)` injection.
 
-### Fixed — Audit Pass (logic)
-- Outbox flush wired (was a no-op closure); realtime events/gaps trigger delta sync (was discarded); `.offline` stage no longer overwritten by bootstrap/dev-signin; onboarding conversation discovery implemented (send no longer dead-ends); Moments composer + comment input bound (buttons were no-ops); unified `isFromHuman` helper (was two contradictory conventions); legacy data now imported before erase (sign-out no longer deletes the import source); push registration via `UIApplication.shared`; structured results post real JSON (was double-encoded).
-- Dead code removed (`AppStateBox`, `_placeholder`); human chat bubbles right-aligned per platform convention.
+---
 
 ## [0.10.0] — 2026-03-30
 
