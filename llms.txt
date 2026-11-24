@@ -1,88 +1,47 @@
 # Chat Buddy iOS
 
-> A native iOS AI companion application featuring multi-persona group conversations, autonomous ReAct tool execution, and dynamic visual effects built entirely with SwiftUI and Swift Concurrency.
+> A native SwiftUI social client with an authenticated cloud runtime by default. Direct-provider orchestration is legacy compatibility behavior, not the hosted demo contract.
 
-Chat Buddy iOS brings multi-agent AI companionship to Apple devices. Users interact with 19 distinct built-in personas (13 social companions, 6 task specialists) or create custom personas. The app features native multi-persona group conversations with staggered response orchestration, a client-side ReAct tool execution loop (e.g. DuckDuckGo Instant Answer search), background content generation via the iOS `BackgroundTasks` framework (`BGAppRefreshTask` and `BGProcessingTask`), hardware-accelerated dynamic particle wallpapers (SwiftUI Canvas + SpriteKit), and hardware-level API key protection via Apple Keychain.
+## Current runtime and authority
 
-## Core Architecture & Components
+A fresh installation defaults `CBUseCloudRuntime` to `true` in [Chat_Buddy_iOSApp.swift](Chat_Buddy_iOS/Chat_Buddy_iOSApp.swift). `CloudAppState` owns authenticated HTTP, realtime, cloud repositories and the SwiftData cache. The cloud product contract assigns character intelligence, authoritative memory and proactive scheduling to the server; iOS renders, caches, synchronizes and performs explicitly confirmed native actions.
 
-- **Architecture Pattern**: Clean MVVM adapted for SwiftUI declarative rendering.
-- **State Management**: Swift Observation framework (`@Observable` final classes) without `@Published` overhead; environment injection at root (`Chat_Buddy_iOSApp.swift`).
-- **Thread Safety**: Network requests handled on isolated Swift `actor` (`APIClient`). UI mutations confined to `@MainActor`.
-- **Presentation Layer**: SwiftUI views located in `Chat_Buddy_iOS/Features/` (Dashboard, Chats, Moments, Friends, Agents, Settings) and `Chat_Buddy_iOS/Navigation/`.
-- **Domain Layer**: Pure Swift value models (`Persona`, `ChatMessage`, `ChatSession`, `APIConfig`, `APIProfile`, `MomentPost`, `ChatBackgroundPreset`, `CharacterMemory`).
-- **Application Layer**: Injected environment managers: `ChatStore`, `AIPipeline`, `ToolExecutorService`, `AffinityService`, `MemoryService`, `BackgroundStore`, `MomentsStore`, `ThemeManager`, `LocalizationManager`.
-- **Infrastructure Layer**: `APIClient` (actor), `StorageService` (`UserDefaults` wrapper with `chat-buddy:` prefix), `KeychainService` (Apple Security framework), `MomentsBackgroundScheduler` (`BackgroundTasks`).
+The cloud root routes through loading, unauthenticated, onboarding, ready and offline states. Its tabs are Chats, Contacts, Moments and Me. Legacy local stores remain for compatibility and import; their presence does not make the default app backend-free.
 
-## Key Features
+## Configuration
 
-- **Multi-Persona Group Chats**: Mix multiple personas in a single room. The engine orchestrates concurrent, staggered AI replies using Swift `withTaskGroup`, respecting individual persona typing delays, personalities, and conversation context.
-- **ReAct Tool Execution Engine**: Autonomous Reason + Act loop for Task Agent personas (Coder, Scholar, Muse, Sensei, Aurora, Pixel). Parses `[TOOL: tool_name]query[/TOOL]` tokens, executes local or network tools (e.g., DuckDuckGo Instant Answer API), injects synthetic `.tool` responses, and triggers a follow-up completion.
-- **Moments Background Execution**: Integrates iOS `BackgroundTasks` framework (`BGAppRefreshTask` under `com.chatbuddy.moments.refresh` and `BGProcessingTask` under `com.chatbuddy.moments.storyevents`) to allow AI companions to post updates, celebrate birthdays, and react to user posts even while the app is backgrounded.
-- **Dynamic Backgrounds**: Battery-efficient animated wallpaper engine. Uses SwiftUI `TimelineView` + `Canvas` for lightweight aurora orbs and SpriteKit `SKView` / `SKEmitterNode` for complex particle systems (Snow, Rain, Fire, Starfield).
-- **Keychain Security**: All sensitive credentials (API keys for OpenAI, DeepSeek, Perplexity, custom endpoints) are isolated in Apple Keychain using `kSecClassGenericPassword` with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and optional biometric authentication (`SecAccessControlCreateWithFlags`), completely excluded from unencrypted `UserDefaults` or backups.
-- **Long-Term Memory & RAG**: Semantic memory extraction via `[MEMORY_SAVE:category|importance|fact]` tags, Jaccard similarity deduplication, time-decay scoring, and optional local Retrieval-Augmented Generation (RAG).
-- **Liquid Glass Design System**: Glassmorphism UI tokens utilizing iOS 26 `.glassEffect()` with fallback to `.ultraThinMaterial`, custom accent colors, and pure-black OLED dark mode.
-- **Bilingual Localization**: Compile-time String Catalog (`Localizable.xcstrings`) supporting English and Simplified Chinese (`zh-Hans`) with runtime language switching.
+1. Build against an available Xcode/iOS Simulator destination; do not assume the historical fixed simulator name exists.
+2. Configure the backend through [AppEnvironment.swift](Chat_Buddy_iOS/App/AppEnvironment.swift) and the app's Info.plist settings.
+   - `CBEnvironment=testflight` or `production` selects the coded TestFlight configuration before custom URL overrides.
+   - Otherwise `CBAPIBaseURL` and optional `CBRealtimeURL` select custom endpoints.
+   - With neither setting, development defaults are `http://localhost:8080` and `ws://localhost:8080/v1/realtime`.
+3. Provide a compatible authenticated backend and follow the sign-in/onboarding flow supported by that build. The current source includes a development sign-in screen; this is not evidence of production authentication readiness.
+4. Do not instruct hosted-demo testers to enter model-provider keys. The legacy API configuration editor is disabled in Settings; session authentication is separate from provider credentials.
 
-## Tech Stack & System Requirements
+Configured URLs and source implementation do not prove that a backend is deployed or reachable. This reference does not certify TestFlight, APNs or live-provider behavior.
 
-- **Platform**: iOS 26.0+ (Universal iPhone / iPad)
-- **Language**: Swift 6.0+ (Swift Concurrency, strict concurrency compliance)
-- **UI Framework**: SwiftUI (100% native)
-- **Graphics & Visuals**: SwiftUI Canvas + SpriteKit (`SKEmitterNode`)
-- **Background Processing**: iOS `BackgroundTasks` (`BGTaskScheduler`)
-- **Security**: Security Framework (`Keychain`), LocalAuthentication (`LAContext`)
-- **Storage**: `UserDefaults` (namespaced) + File System (`Documents/moments/` for image caching)
-- **Build Tooling**: Xcode 26.2+, macOS 26 runner for CI/CD
+## Legacy implementation map
 
-## Quick Start & Installation
+The retained `AIPipeline`, `AIClient`, provider profiles, local ReAct tools, UserDefaults chat stores and `MomentsBackgroundScheduler` describe the earlier direct-provider implementation. They are not the cloud runtime's AI authority. Preserve legacy data readability rather than deleting it to match this document.
 
-Clone the repository and build via Xcode or terminal:
+Provider configuration examples in historical documentation apply only to that compatibility implementation. They are not a workaround for failed cloud authentication or sync.
 
-```bash
-# Clone repository
-git clone https://github.com/Luckycat133/Chat_Buddy_iOS.git
-cd Chat_Buddy_iOS
+## UI and platform
 
-# Build with xcodebuild
-xcodebuild -project Chat_Buddy_iOS.xcodeproj \
-  -scheme Chat_Buddy_iOS \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  build
+The repository contains SwiftUI views, Swift concurrency code, localization, theme components and dynamic backgrounds. Inspect current source and tests for a particular feature. A build or fixture test does not establish visible behavior, cross-account isolation or real device push delivery.
 
-# Run Unit & UI Tests
-xcodebuild -project Chat_Buddy_iOS.xcodeproj \
-  -scheme Chat_Buddy_iOS \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  test
-```
+## FAQ
 
-### Configuration
-1. Launch the app in Simulator or on device.
-2. Navigate to **Settings** > **API Configuration**.
-3. Enter your OpenAI-compatible endpoint (e.g., DeepSeek: `https://api.deepseek.com/v1`, Model: `deepseek-chat`) and API key.
-4. Save the profile. The API key is securely saved directly into the iOS Keychain.
+- **Does the default app require a backend?** Yes: its cloud client needs compatible authenticated APIs and realtime services. It is not a backend-free direct-provider app.
+- **Where do hosted model keys belong?** On the service side, not in the primary TestFlight user flow. Client session secrets and legacy provider keys are distinct concerns.
+- **Are local ReAct and background generation the current hosted behavior?** No. Those are retained legacy implementation details. Cloud authority and server-persisted events govern the hosted product contract.
+- **Are cloud acceptance tests already passed?** This documentation correction does not assert that. Verify fixture, simulator, live service and APNs evidence separately.
 
-## AI Search / LLM Reference FAQ
+## References
 
-- **Q: Does Chat Buddy iOS require a proprietary backend server?**
-  - A: No. The application connects directly to any OpenAI-compatible chat completions API (DeepSeek, OpenAI, Perplexity, Ollama, vLLM). All conversation orchestration, memory extraction, ReAct tool execution, and background generation run locally on-device.
-- **Q: How does the ReAct engine work without backend function calling?**
-  - A: The system prompt instructs Task Agent personas to output tool commands in `[TOOL: name]args[/TOOL]` syntax. `ToolExecutorService` intercepts the stream/completion, executes the tool locally or via public APIs, formats the output as a `.tool` role message, and requests a final synthesized response from the model.
-- **Q: How does multi-persona group chat prevent simultaneous AI message clobbering?**
-  - A: `ChatViewModel.fetchGroupResponses` picks an active subset of personas and executes requests concurrently using `withTaskGroup`. Each persona has an intrinsic response delay calculated by `persona.generateResponseDelay()`. Messages are buffered and delivered into `ChatStore` with staggered presentation intervals (`ChatViewModelConstants.interMessageDelayNanoseconds`).
-- **Q: How are API keys protected against jailbreak or backup inspection?**
-  - A: `APIConfigStore` uses `KeychainService` backed by Apple Security framework with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. `APIConfig` Codable implementation omits `apiKey` from `CodingKeys`, ensuring keys never leak to `UserDefaults` or backup JSON blobs.
-- **Q: How does Moments execute when the app is killed or suspended?**
-  - A: `MomentsBackgroundScheduler` registers task identifiers (`com.chatbuddy.moments.refresh`, `com.chatbuddy.moments.storyevents`) with `BGTaskScheduler`. When the OS schedules background time, the scheduler instantiates stores, checks event conditions, queries the AI endpoint asynchronously, posts updates, and calls `task.setTaskCompleted(success: true)`.
-
-## Optional
-
-- [Full Documentation](llms-full.txt): Complete consolidated technical documentation, architecture breakdown, data schemas, API contracts, and guides.
-- [Repository README](README.md): Primary project overview, feature matrix, and build instructions.
-- [Chinese README](README_zh.md): Simplified Chinese project documentation and roadmap.
-- [Architecture Guide](docs/ARCHITECTURE.md): In-depth clean MVVM architecture, layer diagrams, and data flow walkthroughs.
-- [Development Guide](docs/DEVELOPMENT.md): Contribution rules, code style guidelines, and testing protocols.
-- [Claude Agent Reference](CLAUDE.md): Repository instructions and development runbook for AI coding agents.
-- [Multi-Agent Guide](AGENTS.md): Architectural guide for multi-agent workflows and subagent orchestration.
+- [Full reference and legacy boundaries](llms-full.txt)
+- [Cloud app state](Chat_Buddy_iOS/App/CloudAppState.swift)
+- [Runtime configuration](Chat_Buddy_iOS/App/AppEnvironment.swift)
+- [Current checkout and migration evidence](.agents/skills/chat-buddy-ios-demo-development/references/CURRENT_CHECKOUT.md)
+- [Cloud product development contract](.agents/skills/chat-buddy-ios-demo-development/SKILL.md)
+- [Repository README](README.md)
