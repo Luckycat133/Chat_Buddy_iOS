@@ -36,6 +36,9 @@ struct MeTabView: View {
                     NavigationLink(loc.uiLanguage.resolved == .zh ? "跨端语言与外观" : "Portable language and appearance") {
                         PortablePreferencesView()
                     }
+                    NavigationLink(loc.uiLanguage.resolved == .zh ? "查看 Web 聊天备份" : "Read Web chat backup") {
+                        WebV2ChatArchiveView()
+                    }
                     Button(role: .destructive) {
                         showDeleteAccount = true
                     } label: {
