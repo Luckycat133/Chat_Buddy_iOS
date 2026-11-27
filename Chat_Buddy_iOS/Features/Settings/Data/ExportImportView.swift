@@ -50,6 +50,24 @@ struct ExportImportView: View {
                     )
                 }
                 .tint(.primary)
+
+                Button {
+                    do {
+                        exportDocument = BackupDocument(data: try backupCoordinator.exportPortablePreferences())
+                        showExporter = true
+                    } catch {
+                        alertMessage = error.localizedDescription
+                        showAlert = true
+                    }
+                } label: {
+                    let chinese = localization.uiLanguage.resolved == .zh
+                    SettingRow(
+                        icon: "slider.horizontal.3",
+                        iconColor: .blue,
+                        title: chinese ? "导出跨端偏好" : "Export portable preferences",
+                        subtitle: chinese ? "仅语言和外观，不含聊天或凭据" : "Language and appearance only; no chats or credentials"
+                    )
+                }
             }
 
             // Import

@@ -128,7 +128,7 @@ public struct ChatsRootView: View {
     }
 
     private func reloadFromCache() async {
-        conversations = await app.conversations.cachedConversationList()
+        conversations = await app.conversations.cachedConversationList(myActorId: await app.auth.currentActorId())
     }
 }
 

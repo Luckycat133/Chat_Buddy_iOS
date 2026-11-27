@@ -162,7 +162,7 @@ final class StorageServiceTests: XCTestCase {
         }
     }
 
-    func testImportAllValidatedTotalTooLarge() {
+    func testImportAllValidatedTotalTooLarge() throws {
         // 要触发"总量超限"而不是"单项超限":每项都必须小于单项上限(2MB),
         // 但合计超过总量上限(20MB)。之前用的两项各 10MB,单项就先超了。
         let itemSize = StorageService.maxImportItemBytes - 1
@@ -172,6 +172,8 @@ final class StorageServiceTests: XCTestCase {
             "greetingCooldowns", "intimacy",
         ]
         XCTAssertGreaterThan(keys.count * itemSize, StorageService.maxImportTotalBytes)
+        let baseline = ["bookmarks": Data([42]), "drafts": Data([24])]
+        XCTAssertEqual(try storage.importAllValidated(baseline), baseline.count)
         var data: [String: Data] = [:]
         for key in keys {
             data[key] = Data(repeating: 0, count: itemSize)
@@ -188,6 +190,7 @@ final class StorageServiceTests: XCTestCase {
         } catch {
             XCTFail("Wrong error type: \(error)")
         }
+        XCTAssertEqual(storage.exportAll(), baseline)
     }
 
     func testImportAllValidatedDisallowedKeyThrows() {

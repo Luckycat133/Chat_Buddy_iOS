@@ -42,6 +42,7 @@ public actor ConversationRepository {
         public let type: String
         public let publicName: String?
         public let unreadCount: Int
+        public let lastReadSequence: Int?
         public let lastMessagePreview: String?
         public let lastActivityAt: Date?
 
@@ -52,11 +53,13 @@ public actor ConversationRepository {
             unreadCount: Int,
             lastMessagePreview: String?,
             lastActivityAt: Date?,
+            lastReadSequence: Int? = nil,
         ) {
             self.id = id
             self.type = type
             self.publicName = publicName
             self.unreadCount = unreadCount
+            self.lastReadSequence = lastReadSequence
             self.lastMessagePreview = lastMessagePreview
             self.lastActivityAt = lastActivityAt
         }
@@ -69,6 +72,7 @@ public actor ConversationRepository {
             let type: String
             let publicName: String?
             let unreadCount: Int?
+            let lastReadSequence: Int?
             let lastMessagePreview: String?
             let createdAt: Date
         }
@@ -81,6 +85,7 @@ public actor ConversationRepository {
                 unreadCount: $0.unreadCount ?? 0,
                 lastMessagePreview: $0.lastMessagePreview,
                 lastActivityAt: $0.createdAt,
+                lastReadSequence: $0.lastReadSequence,
             )
         }
     }
@@ -98,7 +103,7 @@ public actor ConversationRepository {
 
     /// Render the chats list from the SwiftData cache without any network
     /// call. Delta sync (runSync) refreshes the same rows.
-    public func cachedConversationList() async -> [ConversationListItem] {
+    public func cachedConversationList(myActorId: String? = nil) async -> [ConversationListItem] {
         await MainActor.run { () -> [ConversationListItem] in
             guard self.lifetime?.isActive != false else { return [] }
             let tombstones = (try? self.context.fetch(
@@ -124,7 +129,7 @@ public actor ConversationRepository {
                     .sorted { $0.sequence < $1.sequence }
                 guard let last = convMessages.last else { continue }
                 let myRead = members
-                    .first { $0.conversationId == conversation.id }
+                    .first { $0.conversationId == conversation.id && $0.actorId == myActorId }
                     .map(\.lastReadSequence) ?? 0
                 let unread = convMessages.filter { $0.sequence > myRead }.count
                 let title: String?
@@ -186,17 +191,17 @@ public actor ConversationRepository {
     /// Local mark-read: advance the member's lastReadSequence so the
     /// unread badge clears. Server truth still comes from sync; this is
     /// presentation-only state.
-    public func markReadLocally(conversationId: String) async {
+    public func markReadLocally(conversationId: String, myActorId: String) async {
         await MainActor.run {
             guard self.lifetime?.isActive != false else { return }
             let members = (try? self.context.fetch(
                 FetchDescriptor<CachedConversationMember>(
-                    predicate: #Predicate { $0.conversationId == conversationId },
+                    predicate: #Predicate { $0.conversationId == conversationId && $0.actorId == myActorId },
                 ),
             )) ?? []
             let latest = (try? self.context.fetch(
                 FetchDescriptor<CachedMessage>(
-                    predicate: #Predicate { $0.conversationId == conversationId },
+                    predicate: #Predicate { $0.conversationId == conversationId && $0.deletedAt == nil },
                     sortBy: [SortDescriptor(\.sequence, order: .reverse)],
                 ),
             ))?.first?.sequence
@@ -214,8 +219,9 @@ public actor ConversationRepository {
     /// member row anchors unread computation in `cachedConversationList`,
     /// so `serverUnreadCount` messages after the last read one are kept.
     /// Static + pure for unit testing.
-    static func readThroughSequence(maxMessageSequence: Int, serverUnreadCount: Int) -> Int {
-        max(0, maxMessageSequence - max(0, serverUnreadCount))
+    static func readThroughSequence(maxMessageSequence: Int, serverUnreadCount: Int, serverCursor: Int? = nil) -> Int {
+        if let serverCursor { return max(0, serverCursor) }
+        return max(0, maxMessageSequence - max(0, serverUnreadCount))
     }
 
     /// Persist the onboarding conversation into the sync-backed cache
@@ -246,6 +252,7 @@ public actor ConversationRepository {
             lastReadSequence: Self.readThroughSequence(
                 maxMessageSequence: live.map(\.sequence).max() ?? 0,
                 serverUnreadCount: summary.unreadCount,
+                serverCursor: summary.lastReadSequence,
             ),
         )
         // The REST list row omits sync-only columns (social graph,

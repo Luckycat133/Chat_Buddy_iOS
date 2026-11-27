@@ -11,6 +11,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.4] - 2026-11-27
+
+### Added
+- Import and export the shared Web/iOS portable preferences format without account data or API credentials.
+
+### Fixed
+- Preserve authoritative per-actor read cursors through onboarding, offline retry and transport timeouts.
+
+---
+
 ## [0.11.3] - 2026-11-15
 
 ### Docs

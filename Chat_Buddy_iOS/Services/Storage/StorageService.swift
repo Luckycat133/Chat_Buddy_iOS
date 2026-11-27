@@ -180,7 +180,7 @@ nonisolated final class StorageService {
 
     @discardableResult
     func importAllValidated(_ data: [String: Data]) throws -> Int {
-        var count = 0
+        // Preflight the complete batch before changing any existing key.
         var totalBytes = 0
         for (key, value) in data {
             guard Self.allowedImportKeys.contains(key) else {
@@ -200,10 +200,11 @@ nonisolated final class StorageService {
                     max: Self.maxImportTotalBytes
                 )
             }
-            defaults.set(value, forKey: prefixedKey(key))
-            count += 1
         }
-        return count
+        for (key, value) in data {
+            defaults.set(value, forKey: prefixedKey(key))
+        }
+        return data.count
     }
 
     private func prefixedKey(_ key: String) -> String {
