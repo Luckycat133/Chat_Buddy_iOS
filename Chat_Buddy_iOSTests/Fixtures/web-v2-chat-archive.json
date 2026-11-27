@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "app": "Chat Buddy",
+    "exportedAt": "2026-11-27T08:00:00.000Z",
+    "version": 2,
+    "includesIndexedDB": true
+  },
+  "localStorage": {
+    "chat-buddy-lang": "zh"
+  },
+  "indexedDB": {
+    "chat-buddy-agents": {
+      "custom-agents": []
+    },
+    "chat-buddy-images": {
+      "images": []
+    },
+    "chat-buddy-main": {
+      "kv": [
+        {
+          "key": "chat-buddy-chats",
+          "value": [
+            {
+              "id": "synthetic-chat",
+              "name": "Fixture 聊天",
+              "participants": [
+                "user-me",
+                "fixture-peer"
+              ],
+              "messages": [
+                {
+                  "id": "first",
+                  "senderId": "user-me",
+                  "content": "Test hello",
+                  "timestamp": "2026-11-27T07:59:00.000Z",
+                  "status": "sent",
+                  "readBy": []
+                },
+                {
+                  "id": "second",
+                  "senderId": "fixture-peer",
+                  "content": "测试回复",
+                  "timestamp": "2026-11-27T07:59:30.000Z",
+                  "status": "sent",
+                  "readBy": [],
+                  "quotedMessageId": "first"
+                }
+              ]
+            }
+          ],
+          "updatedAt": 1795766400000
+        }
+      ]
+    },
+    "chat-buddy-memories": {
+      "memories": []
+    },
+    "chat-buddy-trivia": {
+      "quiz_history": []
+    }
+  }
+}
