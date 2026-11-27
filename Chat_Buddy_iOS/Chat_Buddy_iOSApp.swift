@@ -23,8 +23,11 @@ struct Chat_Buddy_iOSApp: App {
     @State private var draftService = DraftService()
     @State private var knowledgeBaseStore = KnowledgeBaseStore()
     @State private var knowledgeGraphStore = KnowledgeGraphStore()
-    @State private var useCloudRuntime: Bool = UserDefaults.standard
-        .object(forKey: "CBUseCloudRuntime") as? Bool ?? true
+#if DEBUG
+    @State private var useCloudRuntime = UserDefaults.standard.object(forKey: "CBUseCloudRuntime") as? Bool ?? true
+#else
+    private let useCloudRuntime = true
+#endif
     @Environment(\.scenePhase) private var scenePhase
 
     /// `XCTestConfigurationFilePath` only exists in the environment of a
@@ -64,13 +67,25 @@ struct Chat_Buddy_iOSApp: App {
 
     @ViewBuilder
     private var content: some View {
-        if useCloudRuntime, let cloud {
-            CloudAppRoot(cloud: cloud)
-                .environmentObject(cloud)
-                .environment(localization)
-                .environment(themeManager)
-                .environment(accentColorManager)
+        if useCloudRuntime {
+            if let cloud {
+                CloudAppRoot(cloud: cloud)
+                    .environmentObject(cloud)
+                    .environment(localization)
+                    .environment(themeManager)
+                    .environment(accentColorManager)
+            } else if cloudError != nil {
+                ContentUnavailableView {
+                    Label(localization.t("cloud_startup_failed"), systemImage: "exclamationmark.icloud")
+                } actions: {
+                    Button(localization.t("cloud_retry")) { Task { await bootstrapCloudIfNeeded() } }
+                        .buttonStyle(.borderedProminent)
+                }
+            } else {
+                ProgressView(localization.t("cloud_bootstrapping"))
+            }
         } else {
+#if DEBUG
             LegacyAppRoot(
                 legacy: legacy,
                 localization: localization,
@@ -87,6 +102,7 @@ struct Chat_Buddy_iOSApp: App {
                     Task { await bootstrapCloudIfNeeded() }
                 },
             )
+#endif
         }
     }
 
@@ -98,13 +114,13 @@ struct Chat_Buddy_iOSApp: App {
         // own tests (CloudClientTests et al.) that exercise it directly.
         guard !Self.isRunningUnitTests else { return }
         guard useCloudRuntime, cloud == nil else { return }
+        cloudError = nil
         do {
             let state = try CloudAppState()
-            await state.bootstrap()
             self.cloud = state
-            self.cloudError = nil
+            await state.bootstrap()
         } catch {
-            logger.error("Cloud bootstrap failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Cloud bootstrap failed: \(error.localizedDescription, privacy: .private)")
             self.cloudError = String(describing: error)
         }
     }
@@ -115,7 +131,7 @@ struct Chat_Buddy_iOSApp: App {
             MomentsBackgroundScheduler.scheduleAll()
         case .active:
             if useCloudRuntime, let cloud {
-                Task { await cloud.runInitialSync() }
+                Task { await cloud.resume() }
             } else {
                 momentsStore.reloadFromStorage()
             }
@@ -129,8 +145,8 @@ struct Chat_Buddy_iOSApp: App {
 
 /// Cloud-first app root. Replaces the legacy `RootTabView` once the user is
 /// authenticated and `cloud.stage == .ready`. While the cloud runtime boots
-/// or the user is unauthenticated, shows `OnboardingChatView` (Mira) or a
-/// dev-signin prompt.
+/// or the user is unauthenticated, shows `OnboardingChatView` (Mira) or
+/// the account sign-in screen.
 ///
 /// Per `IOS_IMPLEMENTATION.md` §6: Chats is the default landing tab — the
 /// legacy Dashboard tab is removed entirely.
@@ -139,16 +155,52 @@ private struct CloudAppRoot: View {
     @Environment(LocalizationManager.self) private var localization
 
     var body: some View {
+        Group {
+            stageContent
+        }
+        .id(cloud.sessionGeneration)
+    }
+
+    @ViewBuilder
+    private var stageContent: some View {
         switch cloud.stage {
         case .loading:
             ProgressView(localization.t("cloud_bootstrapping"))
         case .unauthenticated:
-            DevSignInView(cloud: cloud)
+            VStack(spacing: 20) {
+                if cloud.accountDeletion == .pendingServerDeletion {
+                    Text(localization.t("cloud_account_deletion_pending"))
+                }
+                if let errorMessage = cloud.errorMessage {
+                    Text(localization.t(errorMessage))
+                        .foregroundStyle(.secondary)
+                }
+                SignInWithAppleView()
+#if DEBUG
+                if cloud.environment.enableDiagnostics {
+                    DevSignInView(cloud: cloud)
+                }
+#endif
+            }
+            .padding()
         case .onboarding:
             OnboardingChatView()
                 .environmentObject(cloud)
-        case .ready, .offline:
+        case .ready:
             ChatsTabHost(cloud: cloud)
+        case .offline:
+            ChatsTabHost(cloud: cloud)
+                .safeAreaInset(edge: .top) {
+                    HStack {
+                        Text(localization.t(cloud.errorMessage ?? "cloud_sync_unavailable"))
+                        Spacer()
+                        Button(localization.t("cloud_retry")) { Task { await cloud.runInitialSync() } }
+                    }
+                    .font(.footnote)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.bar)
+                }
         }
     }
 }

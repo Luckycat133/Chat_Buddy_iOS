@@ -204,20 +204,23 @@ public struct ContactsView: View {
     // MARK: Actions
 
     private func refresh() async {
+        let generation = app.sessionGeneration
+        let repository = app.contacts
         isLoading = true
         defer { isLoading = false }
         guard let myActorId = await app.auth.currentActorId() else {
             error = NSLocalizedString("cloud_contacts_missing_actor", comment: "")
             return
         }
+        guard generation == app.sessionGeneration else { return }
         do {
-            try await app.contacts.refresh(myActorId: myActorId)
-            projection = await app.contacts.cachedProjection(myActorId: myActorId)
+            try await repository.refresh(myActorId: myActorId)
+            projection = await repository.cachedProjection(myActorId: myActorId)
             error = nil
         } catch {
             // Keep cached contacts visible, but never report a failed
             // server pull as a successful refresh.
-            projection = await app.contacts.cachedProjection(myActorId: myActorId)
+            projection = await repository.cachedProjection(myActorId: myActorId)
             self.error = String(describing: error)
         }
     }

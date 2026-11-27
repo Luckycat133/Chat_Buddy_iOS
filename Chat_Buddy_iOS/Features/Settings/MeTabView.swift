@@ -271,7 +271,6 @@ struct DeleteAccountFlow: View {
 
     @State private var confirmationText = ""
     @State private var isDeleting = false
-    @State private var error: String?
 
     private let requiredPhrase = "DELETE"
 
@@ -288,9 +287,6 @@ struct DeleteAccountFlow: View {
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                 }
-                if let error {
-                    Section { Text(error).foregroundStyle(.red) }
-                }
                 Section {
                     Button(role: .destructive) {
                         Task { await deleteNow() }
@@ -302,6 +298,10 @@ struct DeleteAccountFlow: View {
                         }
                     }
                     .disabled(confirmationText != requiredPhrase || isDeleting)
+                    if cloud.accountDeletion == .requestFailed {
+                        Text(loc.t("cloud_account_deletion_retry"))
+                            .foregroundStyle(.red)
+                    }
                 }
             }
             .navigationTitle(loc.t("cloud_me_delete_account"))
@@ -309,6 +309,7 @@ struct DeleteAccountFlow: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(loc.t("cloud_cancel")) { dismiss() }
+                        .disabled(isDeleting)
                 }
             }
         }
@@ -317,7 +318,8 @@ struct DeleteAccountFlow: View {
     private func deleteNow() async {
         isDeleting = true
         defer { isDeleting = false }
-        await cloud.deleteAccount()
-        dismiss()
+        if await cloud.deleteAccount() {
+            dismiss()
+        }
     }
 }

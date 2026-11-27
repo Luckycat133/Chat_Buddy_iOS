@@ -43,6 +43,7 @@ public actor SyncCoordinator {
     private let cursorStore: SyncCursorStore
     private let outbox: OutboxStore
     private let flushOutbox: @Sendable () async -> Void
+    private let lifetime: CloudAccountLifetime?
     private let logger = CloudLogger.sync
 
     public init(
@@ -51,22 +52,26 @@ public actor SyncCoordinator {
         cursorStore: SyncCursorStore,
         outbox: OutboxStore,
         flushOutbox: @escaping @Sendable () async -> Void,
+        lifetime: CloudAccountLifetime? = nil,
     ) {
         self.http = http
         self.context = context
         self.cursorStore = cursorStore
         self.outbox = outbox
         self.flushOutbox = flushOutbox
+        self.lifetime = lifetime
     }
 
     /// Run an initial sync and flush pending outbox mutations.
     public func initialSync(accountId: String) async throws {
         try await runSync(accountId: accountId)
+        try lifetime?.check()
         await flushOutbox()
     }
 
     /// Run a follow-up sync (e.g., after realtime gap).
     public func runSync(accountId: String) async throws {
+        try lifetime?.check()
         let cursor = await cursor(for: accountId)
         let envelope = try await http.get(
             Endpoints.sync(cursor: cursor),
@@ -80,7 +85,10 @@ public actor SyncCoordinator {
     }
 
     private func writeCursor(accountId: String, cursor: String) async {
-        await MainActor.run { cursorStore.writeCursor(accountId: accountId, cursor: cursor) }
+        await MainActor.run {
+            guard lifetime?.isActive != false else { return }
+            cursorStore.writeCursor(accountId: accountId, cursor: cursor)
+        }
     }
 
     private func apply(envelope: ServerEnvelope, accountId: String) async throws {
@@ -91,7 +99,8 @@ public actor SyncCoordinator {
             Set(outbox.loadUnsettled(accountId: accountId).map(\.idempotencyKey))
         }
         let result = try await MainActor.run {
-            try EventApplier.apply(
+            try lifetime?.check()
+            return try EventApplier.apply(
                 envelope: envelope,
                 in: context,
                 pendingIdempotencyKeys: pendingKeys,
@@ -110,6 +119,7 @@ public actor SyncCoordinator {
     private func reconcileOutbox(_ keys: Set<String>, accountId: String) async {
         guard !keys.isEmpty else { return }
         await MainActor.run {
+            guard lifetime?.isActive != false else { return }
             let pending = outbox.loadUnsettled(accountId: accountId)
             for entry in pending where keys.contains(entry.idempotencyKey) {
                 outbox.markAccepted(id: entry.id)

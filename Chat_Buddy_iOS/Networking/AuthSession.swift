@@ -22,6 +22,7 @@ public actor AuthSession {
     private var cachedAccountId: String?
     private var cachedAccessExpiresAt: Date?
     private var cachedAppleSubject: String?
+    private var reloadAllowed = true
     private let logger = CloudLogger.auth
 
     public init(
@@ -32,7 +33,6 @@ public actor AuthSession {
         self.environment = environment
         self.keychain = keychain
         self.service = service
-        Task { await load() }
     }
 
     // MARK: Token accessors
@@ -41,7 +41,13 @@ public actor AuthSession {
         if let cached = cachedAccessToken, let expires = cachedAccessExpiresAt, expires > Date() {
             return cached
         }
-        await load()
+        load()
+        return cachedAccessToken
+    }
+
+    func currentAccessToken(forAccountId accountId: String?) async -> String? {
+        if cachedAccessToken == nil { load() }
+        guard accountId == nil || cachedAccountId == accountId else { return nil }
         return cachedAccessToken
     }
 
@@ -50,7 +56,7 @@ public actor AuthSession {
         // `cachedRefreshToken ?? (await load()).refresh` placed `await`
         // inside an autoclosure, which is a type error.
         if cachedRefreshToken == nil {
-            await load()
+            load()
         }
         return cachedRefreshToken
     }
@@ -58,15 +64,17 @@ public actor AuthSession {
     public func currentAccountId() async -> String? { cachedAccountId }
 
     public func currentSession() async -> SessionSnapshot? {
-        let access = await currentAccessToken()
-        let refresh = await currentRefreshToken()
-        guard let access, let refresh else { return nil }
+        if cachedAccessToken == nil { load() }
+        guard let access = cachedAccessToken, let refresh = cachedRefreshToken,
+              let accountId = cachedAccountId, let actorId = cachedActorId,
+              let expiry = cachedAccessExpiresAt
+        else { return nil }
         return SessionSnapshot(
             accessToken: access,
             refreshToken: refresh,
-            accountId: cachedAccountId ?? "",
-            actorId: cachedActorId ?? "",
-            accessExpiresAt: cachedAccessExpiresAt ?? Date(),
+            accountId: accountId,
+            actorId: actorId,
+            accessExpiresAt: expiry,
         )
     }
 
@@ -77,52 +85,53 @@ public actor AuthSession {
     // MARK: Token write/clear
 
     public func update(tokens: AuthTokens) async {
+        reloadAllowed = true
         cachedAccessToken = tokens.accessToken
         cachedRefreshToken = tokens.refreshToken
         cachedActorId = tokens.actorId
         cachedAccountId = tokens.accountId
         cachedAccessExpiresAt = tokens.accessExpiresAt
-        await persist(tokens)
+        persist(tokens)
     }
 
-    public func update(accessToken: String, accessExpiresAt: Date) async {
+    func applyRefresh(
+        previous: SessionSnapshot,
+        accessToken: String,
+        refreshToken: String,
+        expiresAt: Date,
+    ) -> Bool {
+        guard reloadAllowed, cachedAccountId == previous.accountId,
+              cachedAccessToken == previous.accessToken, cachedRefreshToken == previous.refreshToken
+        else { return false }
         cachedAccessToken = accessToken
-        cachedAccessExpiresAt = accessExpiresAt
-        if let refresh = cachedRefreshToken, let account = cachedAccountId, let actor = cachedActorId {
-            await persist(AuthTokens(
-                accessToken: accessToken,
-                refreshToken: refresh,
-                accountId: account,
-                actorId: actor,
-                accessExpiresAt: accessExpiresAt,
-            ))
-        }
+        cachedAccessExpiresAt = expiresAt
+        cachedRefreshToken = refreshToken
+        persist(AuthTokens(
+            accessToken: accessToken, refreshToken: refreshToken, accountId: previous.accountId,
+            actorId: previous.actorId, accessExpiresAt: expiresAt,
+        ))
+        return true
     }
 
-    /// Rotating refresh tokens (DOMAIN_ARCHITECTURE §14): swap the stored
-    /// refresh material while keeping the rest of the session intact.
-    public func rotate(refreshToken newRefresh: String) async {
-        cachedRefreshToken = newRefresh
-        if let access = cachedAccessToken, let account = cachedAccountId,
-           let actor = cachedActorId, let expires = cachedAccessExpiresAt {
-            await persist(AuthTokens(
-                accessToken: access,
-                refreshToken: newRefresh,
-                accountId: account,
-                actorId: actor,
-                accessExpiresAt: expires,
-            ))
-        }
-    }
-
-    public func clear() async {
+    @discardableResult
+    public func clear() async -> Bool {
+        reloadAllowed = false
         cachedAccessToken = nil
         cachedRefreshToken = nil
         cachedActorId = nil
         cachedAccountId = nil
         cachedAccessExpiresAt = nil
-        try? keychain.delete(account: accessAccount, service: service)
-        await clearAppleSubject()
+        cachedAppleSubject = nil
+        var cleared = true
+        for account in [accessAccount, appleSubjectAccount] {
+            do {
+                try keychain.delete(account: account, service: service)
+            } catch {
+                cleared = false
+                logger.error("cloud session Keychain cleanup failed")
+            }
+        }
+        return cleared
     }
 
     // MARK: Apple subject (separate keychain item — additive, so an
@@ -143,6 +152,7 @@ public actor AuthSession {
     }
 
     public func activeAppleSubject() async -> String? {
+        guard reloadAllowed else { return nil }
         if cachedAppleSubject == nil {
             if let record = try? keychain.read(
                 account: appleSubjectAccount,
@@ -182,7 +192,8 @@ public actor AuthSession {
         let subject: String
     }
 
-    private func load() async {
+    private func load() {
+        guard reloadAllowed else { return }
         do {
             let stored = try keychain.read(account: accessAccount, service: service, as: StoredSession.self)
             cachedAccessToken = stored.accessToken
@@ -196,7 +207,7 @@ public actor AuthSession {
         }
     }
 
-    private func persist(_ tokens: AuthTokens) async {
+    private func persist(_ tokens: AuthTokens) {
         let stored = StoredSession(
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
@@ -286,11 +297,14 @@ public final class KeychainStore: @unchecked Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(query as CFDictionary)
-
-        var attributes = query
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = accessibleAttribute(accessControl)
+        let update: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: accessibleAttribute(accessControl),
+        ]
+        let updated = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if updated == errSecSuccess { return }
+        guard updated == errSecItemNotFound else { throw KeychainError.unhandled(updated) }
+        let attributes = query.merging(update) { _, value in value }
         let status = SecItemAdd(attributes as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw KeychainError.unhandled(status)

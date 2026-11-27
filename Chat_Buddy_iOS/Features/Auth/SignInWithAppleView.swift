@@ -37,6 +37,7 @@ public struct SignInWithAppleView: View {
             }
         }
         .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+            .disabled(inFlight)
             .frame(height: 48)
             .accessibilityLabel("Sign in with Apple")
             .overlay(alignment: .bottom) {
@@ -65,6 +66,7 @@ public struct SignInWithAppleView: View {
                     String(data: $0, encoding: .utf8)
                 },
                 displayName: displayName,
+                appleSubject: credential.user,
             )
             self.error = nil
         } catch {
@@ -85,6 +87,7 @@ extension CloudAppState {
         identityToken: String,
         authorizationCode: String?,
         displayName: String,
+        appleSubject: String? = nil,
     ) async throws {
         struct Body: Codable {
             let identityToken: String
@@ -99,6 +102,7 @@ extension CloudAppState {
             let accountId: String
             let actorId: String
         }
+        let initialGeneration = sessionGeneration
         let response = try await http.send(
             APIEndpoint(path: "/v1/auth/apple", requiresAuth: false),
             method: "POST",
@@ -109,18 +113,16 @@ extension CloudAppState {
             ),
             as: Response.self,
         )
-        await auth.update(
-            tokens: AuthTokens(
+        try await acceptSignIn(
+            AuthTokens(
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken,
                 accountId: response.accountId,
                 actorId: response.actorId,
                 accessExpiresAt: response.accessExpiresAt,
             ),
+            generation: initialGeneration,
+            appleSubject: appleSubject,
         )
-        await runInitialSync()
-        // `stage` has a private setter; onboarding flows transition via
-        // the explicit gate on CloudAppState.
-        transition(to: .onboarding)
     }
 }

@@ -27,16 +27,14 @@ public final class PushNotificationService: NSObject, UNUserNotificationCenterDe
     /// Request permission and register for APNs. Call from the onboarding
     /// flow only after the user is signed in (so we can register the
     /// token against the correct account).
-    public func bootstrap(routeHandler: @escaping (PushRoute) -> Void) async {
+    public func bootstrap(shouldRegister: @escaping () -> Bool = { true }, routeHandler: @escaping (PushRoute) -> Void) async {
         self.routeHandler = routeHandler
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
-            guard granted else { return }
-            await MainActor.run {
-                UIApplication.shared.registerForRemoteNotifications()
-            }
+            guard granted, shouldRegister() else { return }
+            UIApplication.shared.registerForRemoteNotifications()
         } catch {
             logger.notice("push authorization failed: \(String(describing: error), privacy: .public)")
         }
@@ -75,6 +73,7 @@ public final class PushNotificationService: NSObject, UNUserNotificationCenterDe
     /// device rows are invalidated by account deletion; this stops the
     /// current device from receiving new pushes (skill §17).
     public func unregister() async {
+        routeHandler = nil
         await MainActor.run {
             UIApplication.shared.unregisterForRemoteNotifications()
         }

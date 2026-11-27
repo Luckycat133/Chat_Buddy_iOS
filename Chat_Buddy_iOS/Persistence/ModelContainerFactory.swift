@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import SwiftData
 
@@ -10,13 +11,74 @@ import SwiftData
 ///   - Keychain holds session; SwiftData holds cache; UserDefaults holds
 ///     only small preferences.
 public enum ModelContainerFactory {
-    public static func make(schema: Schema) throws -> ModelContainer {
+    static func makeAccountStore(
+        namespace: String,
+        accountId: String,
+        storageRoot: URL? = nil,
+    ) throws -> ModelContainer {
+        let root: URL
+        if let storageRoot {
+            root = storageRoot
+        } else {
+            root = try FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true,
+            ).appendingPathComponent("ChatBuddyAccounts", isDirectory: true)
+        }
+        let key = SHA256.hash(data: Data("\(namespace)\u{0}\(accountId)".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        let directory = root.appendingPathComponent(key, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let config = ModelConfiguration(
-            "ChatBuddyCloudCache",
+            "AccountCache",
             schema: schema,
-            isStoredInMemoryOnly: false,
-            allowsSave: true,
+            url: directory.appendingPathComponent("cache.store"),
+            cloudKitDatabase: .none,
         )
+        let destination = try ModelContainer(for: schema, configurations: [config])
+        if storageRoot == nil {
+            let previous = ModelConfiguration("ChatBuddyCloudCache", schema: schema)
+            if FileManager.default.fileExists(atPath: previous.url.path) {
+                let legacy = try ModelContainer(for: schema, configurations: [previous])
+                try migrateLegacyOutbox(accountId: accountId, from: legacy, to: destination)
+            }
+        }
+        return destination
+    }
+
+    /// The former store did not record an owner on most cache rows. Its
+    /// per-account outbox is the only data that can be migrated safely.
+    @MainActor
+    static func migrateLegacyOutbox(accountId: String, from legacy: ModelContainer, to destination: ModelContainer) throws {
+        let source = ModelContext(legacy)
+        let target = ModelContext(destination)
+        let descriptor = FetchDescriptor<OutboxMutation>(predicate: #Predicate { $0.accountId == accountId })
+        let pending = try source.fetch(descriptor)
+        guard !pending.isEmpty else { return }
+        let existing = Dictionary(uniqueKeysWithValues: try target.fetch(descriptor).map { ($0.id, $0) })
+        for row in pending {
+            if let saved = existing[row.id] {
+                guard saved.idempotencyKey == row.idempotencyKey, saved.method == row.method,
+                      saved.path == row.path, saved.bodyData == row.bodyData
+                else { throw CocoaError(.fileWriteFileExists) }
+                continue
+            }
+            target.insert(OutboxMutation(
+                id: row.id, accountId: row.accountId, idempotencyKey: row.idempotencyKey,
+                method: row.method, path: row.path, bodyData: row.bodyData, state: row.state,
+                attempts: row.attempts, lastError: row.lastError, createdAt: row.createdAt, updatedAt: row.updatedAt,
+            ))
+        }
+        try target.save()
+        for row in pending { source.delete(row) }
+        try source.save()
+    }
+
+    static func makeDeviceSettings() throws -> ModelContainer {
+        let schema = Schema([CachedDeviceSetting.self])
+        let config = ModelConfiguration("ChatBuddyDeviceSettings", schema: schema, cloudKitDatabase: .none)
         return try ModelContainer(for: schema, configurations: [config])
     }
 
@@ -28,21 +90,6 @@ public enum ModelContainerFactory {
             allowsSave: true,
         )
         return try ModelContainer(for: schema, configurations: [config])
-    }
-
-    /// Destroy the SwiftData cache store (account deletion path). The
-    /// store must be dead by the time the next `CloudAppState` boots, so
-    /// delete the on-disk files for the named configuration.
-    public static func destroyStore(named name: String) {
-        let fm = FileManager.default
-        guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return
-        }
-        // SwiftData default store layout: <name>.sqlite (+ -wal/-shm).
-        for suffix in [".sqlite", ".sqlite-wal", ".sqlite-shm"] {
-            let url = support.appendingPathComponent(name + suffix)
-            try? fm.removeItem(at: url)
-        }
     }
 
     /// Single source of truth for the cache schema. New models append here.

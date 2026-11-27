@@ -19,7 +19,12 @@ public final class CloudChatViewModel: ObservableObject {
     @Published public private(set) var conversationTitle: String = ""
 
     public let conversationId: String
-    public var app: CloudAppState?
+    private weak var boundApp: CloudAppState?
+    private var generation: UUID?
+    private var app: CloudAppState? {
+        guard let boundApp, boundApp.sessionGeneration == generation else { return nil }
+        return boundApp
+    }
     private let logger = CloudLogger.realtime
     /// Authoritative rows read from the server/cache; merged with outbox
     /// snapshots through the pure reducer.
@@ -33,12 +38,14 @@ public final class CloudChatViewModel: ObservableObject {
 
     public init(conversationId: String, app: CloudAppState? = nil) {
         self.conversationId = conversationId
-        self.app = app
+        if let app { bind(app: app) }
     }
 
     /// Bind the live `CloudAppState` once the SwiftUI environment is wired.
     public func bind(app: CloudAppState) {
-        self.app = app
+        guard generation == nil else { return }
+        boundApp = app
+        generation = app.sessionGeneration
     }
 
     public var canSend: Bool {
@@ -49,22 +56,24 @@ public final class CloudChatViewModel: ObservableObject {
 
     public func load() async {
         guard let app = app else { return }
+        let conversations = app.conversations
         accountId = await app.auth.currentAccountId()
+        guard self.app != nil else { return }
         do {
-            serverMessages = try await app.conversations.listMessages(
+            serverMessages = try await conversations.listMessages(
                 conversationId: conversationId,
             )
             error = nil
         } catch {
             // Fall back to the cache so the timeline still renders offline.
-            serverMessages = await app.conversations.cachedMessages(
+            serverMessages = await conversations.cachedMessages(
                 conversationId: conversationId,
             )
             self.error = String(describing: error)
         }
         await refreshOutboxSnapshots()
         rebuildRows()
-        await app.conversations.markReadLocally(conversationId: conversationId)
+        await conversations.markReadLocally(conversationId: conversationId)
     }
 
     /// Pull outbox rows for this conversation into pure snapshots.
@@ -78,6 +87,7 @@ public final class CloudChatViewModel: ObservableObject {
     }
 
     private func rebuildRows() {
+        guard app != nil else { return }
         rows = ChatOutboxReducer.merge(server: serverMessages, outbox: outboxSnapshots)
         if conversationTitle.isEmpty {
             conversationTitle = app?.cachedConversationTitle(conversationId: conversationId)
@@ -89,6 +99,7 @@ public final class CloudChatViewModel: ObservableObject {
 
     public func send() async {
         guard let app = app else { return }
+        let conversations = app.conversations
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         // 1. Clear the composer immediately — rapid consecutive messages
@@ -97,7 +108,7 @@ public final class CloudChatViewModel: ObservableObject {
         // 2. Outbox row first (survives process death) so the optimistic
         //    bubble shows as `queued` while the network round-trip runs.
         do {
-            let key = try await app.conversations.enqueueMessage(
+            let key = try await conversations.enqueueMessage(
                 conversationId: conversationId,
                 content: text,
             )
@@ -105,7 +116,7 @@ public final class CloudChatViewModel: ObservableObject {
             rebuildRows()
             // 3. Flush; failure keeps the row visible with retry.
             do {
-                _ = try await app.conversations.flushOne(idempotencyKey: key)
+                _ = try await conversations.flushOne(idempotencyKey: key)
                 error = nil
             } catch let flushError as APIError where flushError.isConflict {
                 self.error = NSLocalizedString("cloud_chat_conflict_notice", comment: "")

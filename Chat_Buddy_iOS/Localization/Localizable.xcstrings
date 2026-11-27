@@ -1281,6 +1281,118 @@
         }
       }
     },
+    "cloud_account_cache_open_failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not open the account cache. Try signing in again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开账户缓存，请重新登录。"
+          }
+        }
+      }
+    },
+    "cloud_account_cleanup_failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some local account data could not be removed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分本地账户数据清理失败。"
+          }
+        }
+      }
+    },
+    "cloud_account_deletion_pending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server accepted the deletion request. Account deletion is pending."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器已受理删除请求，账户正在等待删除。"
+          }
+        }
+      }
+    },
+    "cloud_account_deletion_retry": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server did not confirm the deletion request. Try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器尚未确认删除请求，请重试。"
+          }
+        }
+      }
+    },
+    "cloud_onboarding_unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not check onboarding. Reconnect to continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法确认引导进度，联网后重试。"
+          }
+        }
+      }
+    },
+    "cloud_startup_failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not start Chat Buddy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动 Chat Buddy"
+          }
+        }
+      }
+    },
+    "cloud_sync_unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not sync. Reconnect to continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步失败，联网后重试。"
+          }
+        }
+      }
+    },
     "cloud_bootstrapping": {
       "localizations": {
         "en": {

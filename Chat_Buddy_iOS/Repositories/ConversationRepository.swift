@@ -19,6 +19,7 @@ public actor ConversationRepository {
     private let context: ModelContext
     private let outbox: OutboxStore
     private let accountIdProvider: @Sendable () async -> String?
+    private let lifetime: CloudAccountLifetime?
     private let logger = CloudLogger.sync
 
     public init(
@@ -26,11 +27,13 @@ public actor ConversationRepository {
         context: ModelContext,
         outbox: OutboxStore,
         accountIdProvider: @escaping @Sendable () async -> String?,
+        lifetime: CloudAccountLifetime? = nil,
     ) {
         self.http = http
         self.context = context
         self.outbox = outbox
         self.accountIdProvider = accountIdProvider
+        self.lifetime = lifetime
     }
 
     /// Identifiable so SwiftUI `List`/`ForEach` can render rows directly.
@@ -97,6 +100,7 @@ public actor ConversationRepository {
     /// call. Delta sync (runSync) refreshes the same rows.
     public func cachedConversationList() async -> [ConversationListItem] {
         await MainActor.run { () -> [ConversationListItem] in
+            guard self.lifetime?.isActive != false else { return [] }
             let tombstones = (try? self.context.fetch(
                 FetchDescriptor<CachedTombstone>(
                     predicate: #Predicate { $0.table == "conversations" },
@@ -151,6 +155,7 @@ public actor ConversationRepository {
     /// removed. Renders instantly; network refresh replaces content.
     public func cachedMessages(conversationId: String) async -> [RemoteMessageDTO] {
         await MainActor.run { () -> [RemoteMessageDTO] in
+            guard self.lifetime?.isActive != false else { return [] }
             let rows = (try? self.context.fetch(
                 FetchDescriptor<CachedMessage>(
                     predicate: #Predicate { $0.conversationId == conversationId },
@@ -183,6 +188,7 @@ public actor ConversationRepository {
     /// presentation-only state.
     public func markReadLocally(conversationId: String) async {
         await MainActor.run {
+            guard self.lifetime?.isActive != false else { return }
             let members = (try? self.context.fetch(
                 FetchDescriptor<CachedConversationMember>(
                     predicate: #Predicate { $0.conversationId == conversationId },
@@ -256,6 +262,7 @@ public actor ConversationRepository {
         )
         do {
             try await MainActor.run {
+                try self.lifetime?.check()
                 try EventApplier.hydrateOnboardingRows(
                     conversation: conversation,
                     messages: messages,
@@ -338,6 +345,7 @@ public actor ConversationRepository {
 
     public func cachedInvitations(conversationId: String) async -> [InvitationRow] {
         await MainActor.run { () -> [InvitationRow] in
+            guard self.lifetime?.isActive != false else { return [] }
             let invitations = (try? self.context.fetch(
                 FetchDescriptor<CachedGroupInvitation>(
                     predicate: #Predicate { $0.conversationId == conversationId },
@@ -360,6 +368,7 @@ public actor ConversationRepository {
     /// Cached conversation row (for wizard step 6 / open group check).
     public func cachedConversation(id: String) async -> CachedConversationSnapshot? {
         await MainActor.run { () -> CachedConversationSnapshot? in
+            guard self.lifetime?.isActive != false else { return nil }
             let row = (try? self.context.fetch(
                 FetchDescriptor<CachedConversation>(predicate: #Predicate { $0.id == id }),
             ))?.first
@@ -412,6 +421,7 @@ public actor ConversationRepository {
             )
         }
         try await MainActor.run {
+            try self.lifetime?.check()
             try self.outbox.enqueue(
                 accountId: accountId,
                 method: "POST",
@@ -491,30 +501,37 @@ public actor ConversationRepository {
     }
 
     private func flushOne(accountId: String, idempotencyKey: String) async throws -> SendResult {
+        try lifetime?.check()
         let entry = await MainActor.run { () -> OutboxStore.Mutation? in
-            self.outbox.loadPending(accountId: accountId).first(where: { $0.idempotencyKey == idempotencyKey })
+            guard self.lifetime?.isActive != false else { return nil }
+            return self.outbox.loadPending(accountId: accountId).first(where: { $0.idempotencyKey == idempotencyKey })
         }
         guard let entry = entry else {
             return SendResult(accepted: false, conflict: false, messageId: nil, sequence: nil)
         }
-        await MainActor.run { self.outbox.markSending(id: entry.id) }
+        try await MainActor.run {
+            try self.lifetime?.check()
+            self.outbox.markSending(id: entry.id)
+        }
         do {
             struct Response: Codable, Sendable {
                 let id: String
                 let sequence: Int
             }
-            let body = entry.bodyData
             let endpoint = Endpoints.sendMessage(
                 conversationId: extractConversationId(from: entry.path),
                 idempotencyKey: entry.idempotencyKey,
             )
-            let response = try await http.send(
+            let response = try await http.sendJSON(
                 endpoint,
                 method: entry.method,
-                body: body,
+                body: entry.bodyData,
                 as: Response.self,
             )
-            await MainActor.run { self.outbox.markAccepted(id: entry.id) }
+            try await MainActor.run {
+                try self.lifetime?.check()
+                self.outbox.markAccepted(id: entry.id)
+            }
             return SendResult(
                 accepted: true,
                 conflict: false,
@@ -522,10 +539,14 @@ public actor ConversationRepository {
                 sequence: response.sequence,
             )
         } catch let error as APIError where error.isConflict {
-            await MainActor.run { self.outbox.markConflict(id: entry.id) }
+            try await MainActor.run {
+                try self.lifetime?.check()
+                self.outbox.markConflict(id: entry.id)
+            }
             return SendResult(accepted: false, conflict: true, messageId: nil, sequence: nil)
         } catch {
             await MainActor.run {
+                guard self.lifetime?.isActive != false else { return }
                 self.outbox.markFailed(id: entry.id, error: String(describing: error))
             }
             throw error

@@ -10,16 +10,23 @@ import SwiftData
 public actor ContactsRepository {
     private let http: HTTPClient
     private let context: ModelContext
+    private let lifetime: CloudAccountLifetime?
 
-    public init(http: HTTPClient, context: ModelContext) {
+    public init(http: HTTPClient, context: ModelContext, lifetime: CloudAccountLifetime? = nil) {
         self.http = http
         self.context = context
+        self.lifetime = lifetime
     }
 
     // MARK: Cache projection
 
     public func cachedProjection(myActorId: String) async -> ContactsProjection {
-        try await MainActor.run { () -> ContactsProjection in
+        await MainActor.run { () -> ContactsProjection in
+            guard self.lifetime?.isActive != false else {
+                return ContactsClassifier.project(
+                    requests: [], relationships: [], actors: [:], myActorId: myActorId, conversations: [],
+                )
+            }
             let requests = (try? self.context.fetch(FetchDescriptor<CachedFriendRequest>())) ?? []
             let relationships = (try? self.context.fetch(FetchDescriptor<CachedRelationship>())) ?? []
             let actors = (try? self.context.fetch(FetchDescriptor<CachedActor>())) ?? []
@@ -81,6 +88,7 @@ public actor ContactsRepository {
         // do not prevent the other surfaces from merging.
         let actors = try await http.get(Endpoints.actors, as: ActorListResponse.self)
         try await MainActor.run {
+            try self.lifetime?.check()
             for dto in actors.items {
                 Self.upsertActor(dto, in: self.context)
             }
@@ -94,6 +102,7 @@ public actor ContactsRepository {
                 as: FriendRequestListResponse.self,
             )
             try await MainActor.run {
+                try self.lifetime?.check()
                 for dto in requests.items {
                     Self.upsertRequest(dto, in: self.context)
                 }
@@ -108,6 +117,7 @@ public actor ContactsRepository {
                 as: RelationshipListResponse.self,
             )
             try await MainActor.run {
+                try self.lifetime?.check()
                 for dto in relationships.items {
                     Self.upsertRelationship(dto, in: self.context)
                 }

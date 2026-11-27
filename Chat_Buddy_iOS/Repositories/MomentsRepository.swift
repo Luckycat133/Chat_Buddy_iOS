@@ -44,10 +44,12 @@ struct MomentInteractionDTO: Codable, Sendable {
 public actor MomentsRepository {
     private let http: HTTPClient
     private let context: ModelContext
+    private let lifetime: CloudAccountLifetime?
 
-    public init(http: HTTPClient, context: ModelContext) {
+    public init(http: HTTPClient, context: ModelContext, lifetime: CloudAccountLifetime? = nil) {
         self.http = http
         self.context = context
+        self.lifetime = lifetime
     }
 
     public struct MomentItem: Sendable, Equatable, Identifiable {
@@ -92,7 +94,8 @@ public actor MomentsRepository {
         )
         let actorNames = await cachedActorNames()
         let actorTypes = await cachedActorTypes()
-        await MainActor.run {
+        try await MainActor.run {
+            try self.lifetime?.check()
             for dto in response.items {
                 Self.upsertMoment(dto, in: self.context)
             }
@@ -139,6 +142,7 @@ public actor MomentsRepository {
     /// Cache-first feed read: render what we have, no network.
     public func cachedFeed() async -> [MomentItem] {
         await MainActor.run { () -> [MomentItem] in
+            guard self.lifetime?.isActive != false else { return [] }
             let moments = (try? self.context.fetch(
                 FetchDescriptor<CachedMoment>(
                     sortBy: [SortDescriptor(\.createdAt, order: .reverse)],
@@ -209,7 +213,8 @@ public actor MomentsRepository {
             as: Response.self,
         )
         if let me = await myActorId() {
-            await MainActor.run {
+            try await MainActor.run {
+                try self.lifetime?.check()
                 Self.upsertInteraction(
                     CachedMomentInteraction(
                         id: response.id,
@@ -242,7 +247,8 @@ public actor MomentsRepository {
             body: Optional<EmptyBody>.none,
             as: Response.self,
         )
-        await MainActor.run {
+        try await MainActor.run {
+            try self.lifetime?.check()
             let rows = (try? self.context.fetch(
                 FetchDescriptor<CachedMoment>(predicate: #Predicate { $0.id == momentId }),
             )) ?? []
@@ -291,6 +297,7 @@ public actor MomentsRepository {
 
     private func cachedActorNames() async -> [String: String] {
         await MainActor.run { () -> [String: String] in
+            guard self.lifetime?.isActive != false else { return [:] }
             let actors = (try? self.context.fetch(FetchDescriptor<CachedActor>())) ?? []
             return Dictionary(uniqueKeysWithValues: actors.map { ($0.id, $0.publicName) })
         }
@@ -298,6 +305,7 @@ public actor MomentsRepository {
 
     private func cachedActorTypes() async -> [String: String] {
         await MainActor.run { () -> [String: String] in
+            guard self.lifetime?.isActive != false else { return [:] }
             let actors = (try? self.context.fetch(FetchDescriptor<CachedActor>())) ?? []
             return Dictionary(uniqueKeysWithValues: actors.map { ($0.id, $0.type) })
         }

@@ -13,23 +13,27 @@ import os
 public actor ActorRepository {
     private let http: HTTPClient
     private let context: ModelContext
+    private let lifetime: CloudAccountLifetime?
     private let logger = CloudLogger.auth
 
-    public init(http: HTTPClient, context: ModelContext) {
+    public init(http: HTTPClient, context: ModelContext, lifetime: CloudAccountLifetime? = nil) {
         self.http = http
         self.context = context
+        self.lifetime = lifetime
     }
 
     public func listActors() async throws -> [CachedActor] {
         // Cache-first: render immediately, refresh in background.
-        let cached = await MainActor.run { () -> [CachedActor] in
-            (try? self.context.fetch(FetchDescriptor<CachedActor>(
+        let cached = try await MainActor.run { () -> [CachedActor] in
+            try self.lifetime?.check()
+            return (try? self.context.fetch(FetchDescriptor<CachedActor>(
                 sortBy: [SortDescriptor(\.publicName)]
             ))) ?? []
         }
         do {
             let remote = try await http.get(Endpoints.actors, as: ActorsListResponse.self)
             try await MainActor.run {
+                try self.lifetime?.check()
                 for dto in remote.items {
                     Self.upsertActor(dto, in: self.context)
                 }
@@ -41,12 +45,14 @@ public actor ActorRepository {
         } catch {
             logger.notice("actor list refresh failed: \(String(describing: error), privacy: .public)")
         }
+        try lifetime?.check()
         return cached
     }
 
     public func fetchActor(id: String) async throws -> CachedActor {
-        let cached = await MainActor.run { () -> CachedActor? in
-            (try? self.context.fetch(
+        let cached = try await MainActor.run { () -> CachedActor? in
+            try self.lifetime?.check()
+            return (try? self.context.fetch(
                 FetchDescriptor<CachedActor>(predicate: #Predicate { $0.id == id })
             ).first)
         }
@@ -67,6 +73,7 @@ public actor ActorRepository {
             as: ActorDetailResponse.self,
         )
         try await MainActor.run {
+            try self.lifetime?.check()
             Self.upsertActor(dto.actor, in: self.context)
             try? self.context.save()
         }

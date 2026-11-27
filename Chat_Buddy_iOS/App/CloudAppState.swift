@@ -24,6 +24,14 @@ public final class CloudAppState: ObservableObject {
         case offline
     }
 
+    public enum AccountDeletion: Sendable, Equatable {
+        case idle
+        case submitting
+        case requestFailed
+        case pendingServerDeletion
+        case localCleanupFailed
+    }
+
     @Published public private(set) var stage: BootStage = .loading
     @Published public private(set) var environment: AppEnvironment
     @Published public private(set) var errorMessage: String?
@@ -37,28 +45,39 @@ public final class CloudAppState: ObservableObject {
         }
     }
     @Published public var pendingDeepLink: DeepLinkRouter.PendingRoute?
+    @Published public private(set) var accountDeletion: AccountDeletion = .idle
+    @Published public private(set) var sessionGeneration = UUID()
 
-    public let container: ModelContainer
+    public var container: ModelContainer { scope.container }
     public let auth: AuthSession
-    public let http: HTTPClient
-    public let realtime: RealtimeClient
-    public let sync: SyncCoordinator
-    public let actors: ActorRepository
-    public let conversations: ConversationRepository
-    public let moments: MomentsRepository
-    public let contacts: ContactsRepository
+    public var http: HTTPClient { scope.http }
+    public var realtime: RealtimeClient { scope.realtime }
+    public var sync: SyncCoordinator { scope.sync }
+    public var actors: ActorRepository { scope.actors }
+    public var conversations: ConversationRepository { scope.conversations }
+    public var moments: MomentsRepository { scope.moments }
+    public var contacts: ContactsRepository { scope.contacts }
     public let calendar: CalendarCapability
-    public let weather: WeatherCapability
-    public let search: SearchCapability
-    public let calendarCoordinator: ClientActionCoordinator
+    public var weather: WeatherCapability { scope.weather }
+    public var search: SearchCapability { scope.search }
+    public var calendarCoordinator: ClientActionCoordinator { scope.calendarCoordinator }
     public let push: PushNotificationService
     public let router = DeepLinkRouter()
-    public let outbox: OutboxStore
-    public let cursorStore: SyncCursorStore
+    public var outbox: OutboxStore { scope.outbox }
+    public var cursorStore: SyncCursorStore { scope.cursorStore }
     public let legacyImporter: LegacyImporter
     public let deviceSettings: DeviceSettingsStore
 
     private let logger = CloudLogger.auth
+    private let unauthenticatedContainer: ModelContainer
+    private let makeAccountContainer: (String) throws -> ModelContainer
+    private let urlSession: URLSession?
+    private let enablePush: Bool
+    private let enableRealtime: Bool
+    private var scope: CloudAccountScope
+    private var changingSession = false
+    private var revocationPending = false
+    private var pushBootstrapped = false
 
     /// Non-isolated teardown on purpose — see `LegacyImporter.nonisolated deinit`
     /// for the full story (isolated deinit + release from an async frame =
@@ -66,60 +85,50 @@ public final class CloudAppState: ObservableObject {
     /// needs the main actor to be torn down.
     nonisolated deinit {}
 
-    public init(
+    public convenience init(
         environment: AppEnvironment = .resolve(),
         container: ModelContainer? = nil,
     ) throws {
-        self.environment = environment
-        let resolvedContainer = try container ?? ModelContainerFactory.make(schema: ModelContainerFactory.schema)
-        self.container = resolvedContainer
-        let context = ModelContext(resolvedContainer)
-        let session = AuthSession(environment: environment)
-        let client = HTTPClient(environment: environment, session: session)
-        let realtimeClient = RealtimeClient(
+        let deviceContainer = try container ?? ModelContainerFactory.makeDeviceSettings()
+        try self.init(
             environment: environment,
-            session: session,
-            onEvent: { _ in }, // real handlers installed in bootstrap()
-            onGap: { },
-        )
-        self.auth = session
-        self.http = client
-        self.realtime = realtimeClient
-        self.cursorStore = SyncCursorStore(context: context)
-        self.outbox = OutboxStore(context: context)
-        self.deviceSettings = DeviceSettingsStore(context: context)
-        // The repository must exist before the sync coordinator so the
-        // coordinator's flush closure can replay the real outbox.
-        let conversationsRepository = ConversationRepository(
-            http: client,
-            context: context,
-            outbox: outbox,
-            accountIdProvider: { [weak session] in await session?.currentAccountId() },
-        )
-        let coordinator = SyncCoordinator(
-            http: client,
-            context: context,
-            cursorStore: cursorStore,
-            outbox: outbox,
-            flushOutbox: {
-                do {
-                    _ = try await conversationsRepository.flushOutbox()
-                } catch {
-                    CloudLogger.sync.notice(
-                        "outbox flush failed: \(String(describing: error), privacy: .public)",
-                    )
-                }
+            auth: AuthSession(environment: environment),
+            deviceContainer: deviceContainer,
+            makeAccountContainer: { accountId in
+                try ModelContainerFactory.makeAccountStore(
+                    namespace: "\(environment.bundleIdentifier)\u{0}\(environment.apiBaseURL.absoluteString)",
+                    accountId: accountId,
+                )
             },
         )
-        self.sync = coordinator
-        self.actors = ActorRepository(http: client, context: context)
-        self.conversations = conversationsRepository
-        self.moments = MomentsRepository(http: client, context: context)
-        self.contacts = ContactsRepository(http: client, context: context)
+    }
+
+    init(
+        environment: AppEnvironment,
+        auth: AuthSession,
+        deviceContainer: ModelContainer,
+        urlSession: URLSession? = nil,
+        enablePush: Bool = true,
+        enableRealtime: Bool = true,
+        makeAccountContainer: @escaping (String) throws -> ModelContainer,
+    ) throws {
+        self.environment = environment
+        self.auth = auth
+        self.urlSession = urlSession
+        self.enablePush = enablePush
+        self.enableRealtime = enableRealtime
+        self.makeAccountContainer = makeAccountContainer
+        let signedOut = try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema)
+        self.unauthenticatedContainer = signedOut
+        self.scope = CloudAccountScope(
+            accountId: nil,
+            container: signedOut,
+            environment: environment,
+            auth: auth,
+            urlSession: urlSession,
+        )
+        self.deviceSettings = DeviceSettingsStore(context: ModelContext(deviceContainer))
         self.calendar = CalendarCapability()
-        self.weather = WeatherCapability(http: client)
-        self.search = SearchCapability(http: client)
-        self.calendarCoordinator = ClientActionCoordinator(http: client, calendar: CalendarCapability())
         self.push = PushNotificationService.shared
         self.legacyImporter = LegacyImporter()
         if let rawTab = deviceSettings.read(.lastSelectedTab),
@@ -130,17 +139,15 @@ public final class CloudAppState: ObservableObject {
 
     /// Boot the cloud client. Called from `init` of the SwiftUI App.
     public func bootstrap() async {
-        await installRealtimeHandlers()
-        await auth.reload()
-        if await auth.isAuthenticated() {
-            await runInitialSync()
-            // runInitialSync sets `.offline` on failure; don't clobber it
-            // with `.ready` when the sync actually failed.
-            if stage != .offline {
-                await routeAfterSync()
-            }
-        } else {
+        guard let session = await auth.currentSession() else {
             stage = .unauthenticated
+            return
+        }
+        do {
+            try await establishSession(accountId: session.accountId, tokens: nil, appleSubject: nil)
+        } catch {
+            errorMessage = "cloud_account_cache_open_failed"
+            await endSession(eraseCache: false)
         }
     }
 
@@ -149,39 +156,39 @@ public final class CloudAppState: ObservableObject {
     /// complete — this is the forkable breakpoint resume; leaving
     /// mid-onboarding never loses progress.
     func routeAfterSync() async {
-        let resume = (try? await http.get(
-            Endpoints.onboardingState,
-            as: OnboardingStatePayload.self,
-        ))
-        if let resume, OnboardingGate.shouldResumeOnboarding(
-            OnboardingGate.ServerState.parse(
-                resume.state,
-                step: resume.step,
-                awaitingUser: resume.awaitingUser,
-            ),
-        ) {
-            stage = .onboarding
-        } else {
-            stage = .ready
+        let current = scope
+        guard current.accountId != nil, current.lifetime.isActive else { return }
+        do {
+            let resume = try await current.http.get(Endpoints.onboardingState, as: OnboardingStatePayload.self)
+            try current.lifetime.check()
+            let serverState = OnboardingGate.ServerState.parse(
+                resume.state, step: resume.step, awaitingUser: resume.awaitingUser,
+            )
+            stage = OnboardingGate.shouldResumeOnboarding(serverState) ? .onboarding : .ready
+            errorMessage = nil
+            if stage == .ready { await bootstrapPushIfReady() }
+        } catch {
+            guard current.lifetime.isActive else { return }
+            stage = .offline
+            errorMessage = "cloud_onboarding_unavailable"
         }
-        await bootstrapPushIfReady()
     }
 
     /// Register APNs once the user reaches the main app. Permission is
     /// requested contextually (after onboarding), not at first launch.
     private func bootstrapPushIfReady() async {
-        guard !pushBootstrapped else { return }
+        let lifetime = scope.lifetime
+        guard enablePush, lifetime.isActive, scope.accountId != nil, !pushBootstrapped else { return }
         pushBootstrapped = true
-        await push.bootstrap { [weak self] route in
+        await push.bootstrap(shouldRegister: { lifetime.isActive }) { [weak self] route in
             // The route handler is synchronous and may run off the main actor;
             // hop back explicitly before touching view state.
             Task { @MainActor [weak self] in
+                guard lifetime.isActive else { return }
                 await self?.handlePushRoute(route)
             }
         }
     }
-
-    private var pushBootstrapped = false
 
     /// Route a push into the right tab/conversation. Payload carries only
     /// opaque route data (skill §11).
@@ -201,6 +208,7 @@ public final class CloudAppState: ObservableObject {
     /// Best-effort cached display title for a conversation, read on the
     /// main-actor model context. Falls back to nil (caller localizes).
     func cachedConversationTitle(conversationId: String) -> String? {
+        guard scope.accountId != nil, scope.lifetime.isActive else { return nil }
         let context = ModelContext(container)
         if let conversation = (try? context.fetch(
             FetchDescriptor<CachedConversation>(predicate: #Predicate { $0.id == conversationId }),
@@ -218,13 +226,14 @@ public final class CloudAppState: ObservableObject {
     /// Install the real realtime callbacks. Deferred until `bootstrap`
     /// (awaited before `realtime.connect()`) because closures cannot
     /// capture `self` mid-init.
-    private func installRealtimeHandlers() async {
-        await realtime.setHandlers(
+    private func installRealtimeHandlers(for scope: CloudAccountScope) async {
+        let lifetime = scope.lifetime
+        await scope.realtime.setHandlers(
             onEvent: { [weak self] event in
-                await self?.handleRealtimeEvent(event)
+                await self?.handleRealtimeEvent(event, lifetime: lifetime)
             },
             onGap: { [weak self] in
-                await self?.handleRealtimeGap()
+                await self?.handleRealtimeGap(lifetime: lifetime)
             },
         )
     }
@@ -234,21 +243,24 @@ public final class CloudAppState: ObservableObject {
     /// TODO(skill §"Realtime client"): parse the event channel/payload and
     /// refresh only the affected conversation/moment instead of a full
     /// delta pass.
-    func handleRealtimeEvent(_ event: RealtimeClient.RealtimeEvent) async {
+    func handleRealtimeEvent(_ event: RealtimeClient.RealtimeEvent, lifetime: CloudAccountLifetime) async {
+        guard scope.lifetime === lifetime, lifetime.isActive else { return }
         lastRealtimeEvent = event
         await runDeltaSyncAfterRealtime()
     }
 
     /// The server reported an event gap: resume must be a delta sync.
-    func handleRealtimeGap() async {
+    func handleRealtimeGap(lifetime: CloudAccountLifetime) async {
+        guard scope.lifetime === lifetime, lifetime.isActive else { return }
         logger.notice("realtime gap detected; running delta sync")
         await runDeltaSyncAfterRealtime()
     }
 
     private func runDeltaSyncAfterRealtime() async {
-        guard let accountId = await auth.currentAccountId() else { return }
+        let current = scope
+        guard let accountId = current.accountId, current.lifetime.isActive else { return }
         do {
-            try await sync.runSync(accountId: accountId)
+            try await current.sync.runSync(accountId: accountId)
         } catch {
             logger.notice(
                 "realtime delta sync failed: \(String(describing: error), privacy: .public)",
@@ -280,6 +292,7 @@ public final class CloudAppState: ObservableObject {
             let accountId: String
             let actorId: String
         }
+        let initialGeneration = sessionGeneration
         let body = Body(displayName: displayName)
         let response = try await http.send(
             Endpoints.devSignIn(displayName: displayName),
@@ -287,80 +300,181 @@ public final class CloudAppState: ObservableObject {
             body: body,
             as: Response.self,
         )
-        await auth.update(
-            tokens: AuthTokens(
+        try await acceptSignIn(
+            AuthTokens(
                 accessToken: response.accessToken,
                 refreshToken: response.refreshToken,
                 accountId: response.accountId,
                 actorId: response.actorId,
                 accessExpiresAt: response.accessExpiresAt,
             ),
+            generation: initialGeneration,
         )
-        await runInitialSync()
-        // Same rule as bootstrap(): a failed initial sync already moved us
-        // to `.offline`; don't overwrite it with `.onboarding`.
-        if stage != .offline {
-            await routeAfterSync()
-        }
     }
 
-    /// Account deletion per skill §17: explicit confirmation happens in
-    /// the UI first; then server delete, Keychain clear, SwiftData store
-    /// destroy, push unregister, and return to auth.
-    public func deleteAccount() async {
-        // 1. Server-side deletion (authoritative).
-        do {
-            try await http.send(
-                Endpoints.accountDelete,
-                method: "DELETE",
-                body: Optional<EmptyBody>.none,
-                as: EmptyResponse.self,
-            )
-        } catch {
-            // Still tear down local secrets/cache: the account may already
-            // be deleted from another device (skill §11).
-            CloudLogger.auth.notice(
-                "account delete call failed; proceeding with local teardown: \(String(describing: error), privacy: .public)",
-            )
+    func acceptSignIn(_ tokens: AuthTokens, generation: UUID, appleSubject: String? = nil) async throws {
+        guard generation == sessionGeneration else { throw CancellationError() }
+        try await establishSession(accountId: tokens.accountId, tokens: tokens, appleSubject: appleSubject)
+    }
+
+    private func establishSession(accountId: String, tokens: AuthTokens?, appleSubject: String?) async throws {
+        guard !changingSession, accountDeletion != .submitting, !accountId.isEmpty else {
+            throw CancellationError()
         }
-        // 2. Unregister push token.
-        await push.unregister()
-        // 3. Clear Keychain (session secrets, tokens).
-        try? KeychainService.clearAll()
-        // 4. Destroy the SwiftData cache store.
-        await realtime.disconnect()
-        ModelContainerFactory.destroyStore(named: "ChatBuddyCloudCache")
-        // 5. Back to auth. Legacy UserDefaults data is preserved only if
-        // the one-time import did not run; eraseLegacyKeys is NOT called
-        // here — deletion of the account already covers cloud data.
-        stage = .unauthenticated
+        let nextContainer = try makeAccountContainer(accountId)
+        changingSession = true
+        let next = CloudAccountScope(
+            accountId: accountId,
+            container: nextContainer,
+            environment: environment,
+            auth: auth,
+            urlSession: urlSession,
+        )
+        let previous = scope
+        previous.lifetime.end()
+        stage = .loading
+        clearAccountPresentation()
+        errorMessage = nil
+        accountDeletion = .idle
+        if enablePush, previous.accountId != nil { await push.unregister() }
+        await previous.stop()
+        if let tokens {
+            await auth.update(tokens: tokens)
+            if let appleSubject {
+                await auth.storeAppleSubject(appleSubject)
+            } else {
+                await auth.clearAppleSubject()
+            }
+        }
+        scope = next
+        await installRealtimeHandlers(for: next)
+        let lifetime = next.lifetime
+        await next.authService.setRevocationHandler { [weak self] _ in
+            await self?.onSessionRevoked(lifetime: lifetime)
+        }
+        await next.authService.installUnauthorizedHandler(on: next.http)
+        changingSession = false
+        await runInitialSync()
+    }
+
+    private func clearAccountPresentation() {
+        sessionGeneration = UUID()
+        lastRealtimeEvent = nil
+        pendingDeepLink = nil
+        router.pending = nil
+        revocationPending = false
+        pushBootstrapped = false
+        selectedTab = .chats
+    }
+
+    /// The server first schedules deletion. Local cleanup follows only
+    /// after receiving a valid acknowledgement.
+    @discardableResult
+    public func deleteAccount() async -> Bool {
+        guard scope.accountId != nil, accountDeletion != .submitting, !changingSession else {
+            return false
+        }
+        accountDeletion = .submitting
+        let current = scope
+        struct Request: Codable { let confirmation: String }
+        struct Receipt: Decodable, Sendable { let ok: Bool; let deletionStartedAt: Date }
+        do {
+            let receipt = try await current.http.send(
+                Endpoints.accountDelete, method: "POST",
+                body: Request(confirmation: "delete my account"), as: Receipt.self,
+            )
+            guard receipt.ok else {
+                await markDeletionUnconfirmed()
+                return false
+            }
+        } catch {
+            await markDeletionUnconfirmed()
+            return false
+        }
+        accountDeletion = await endSession(eraseCache: true) ? .pendingServerDeletion : .localCleanupFailed
+        return true
+    }
+
+    private func markDeletionUnconfirmed() async {
+        accountDeletion = .requestFailed
+        logger.notice("account deletion was not acknowledged")
+        if revocationPending { await endSession(eraseCache: false) }
     }
 
     public func signOut() async {
-        await auth.clear()
-        // Legacy UserDefaults data is NOT erased here: it is the import
-        // source for `LegacyImporter`, which must run (and succeed) before
-        // anything is deleted. See LegacyImporter.eraseLegacyKeys().
+        guard !changingSession, accountDeletion != .submitting else { return }
+        await endSession(eraseCache: false)
+    }
+
+    private func onSessionRevoked(lifetime: CloudAccountLifetime) async {
+        guard scope.lifetime === lifetime, lifetime.isActive, !changingSession else { return }
+        if accountDeletion == .submitting {
+            revocationPending = true
+            return
+        }
+        await endSession(eraseCache: false)
+    }
+
+    func resume() async {
+        let active = scope
+        guard active.accountId != nil, active.lifetime.isActive else { return }
+        if await active.authService.checkAppleCredentialRevoked() {
+            await active.authService.performSessionRevocation(.appleCredentialRevoked)
+        } else if active.lifetime.isActive {
+            await runInitialSync()
+        }
+    }
+
+    @discardableResult
+    private func endSession(eraseCache: Bool) async -> Bool {
+        changingSession = true
+        defer { changingSession = false }
+        let previous = scope
+        previous.lifetime.end()
+        stage = .loading
+        clearAccountPresentation()
+        await previous.stop()
+        if enablePush { await push.unregister() }
+        var cleared = await auth.clear()
+        scope = CloudAccountScope(
+            accountId: nil,
+            container: unauthenticatedContainer,
+            environment: environment,
+            auth: auth,
+            urlSession: urlSession,
+        )
+        if eraseCache {
+            do {
+                try previous.container.erase()
+            } catch {
+                cleared = false
+                logger.error("account cache erase failed")
+            }
+        }
         stage = .unauthenticated
+        if !cleared { errorMessage = "cloud_account_cleanup_failed" }
+        return cleared
     }
 
     public func runInitialSync() async {
-        guard let accountId = await auth.currentAccountId() else { return }
+        let current = scope
+        guard let accountId = current.accountId, current.lifetime.isActive,
+              accountDeletion != .submitting
+        else { return }
         do {
-            try await sync.initialSync(accountId: accountId)
-            await realtime.connect()
+            try await current.sync.initialSync(accountId: accountId)
+            try current.lifetime.check()
+            if enableRealtime { await current.realtime.connect() }
+            try current.lifetime.check()
+            if stage == .loading || stage == .offline {
+                await routeAfterSync()
+            }
         } catch {
-            logger.notice("initial sync failed: \(String(describing: error), privacy: .public)")
-            errorMessage = String(describing: error)
+            guard current.lifetime.isActive, !Task.isCancelled else { return }
+            logger.notice("initial sync failed: \(String(describing: error), privacy: .private)")
+            errorMessage = "cloud_sync_unavailable"
             stage = .offline
         }
-    }
-}
-
-private extension AuthSession {
-    /// Refresh the in-memory token cache from Keychain at boot.
-    func reload() async {
-        _ = await currentAccessToken()
     }
 }
 

@@ -72,7 +72,11 @@ public struct AppEnvironment: Sendable, Equatable {
                 apnsEnvironment: (envOverride == "testflight") ? .production : .sandbox,
             )
         }
+#if DEBUG
         return .development
+#else
+        return .testFlight
+#endif
     }
 }
 

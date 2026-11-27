@@ -9,17 +9,23 @@ public struct APIEndpoint: Sendable {
     public let query: [String: String]
     public let idempotencyKey: String?
     public let requiresAuth: Bool
+    public let refreshesAuth: Bool
+    public let replaysLostResponse: Bool
 
     public init(
         path: String,
         query: [String: String] = [:],
         idempotencyKey: String? = nil,
         requiresAuth: Bool = true,
+        refreshesAuth: Bool = true,
+        replaysLostResponse: Bool = false,
     ) {
         self.path = path
         self.query = query
         self.idempotencyKey = idempotencyKey
         self.requiresAuth = requiresAuth
+        self.refreshesAuth = refreshesAuth
+        self.replaysLostResponse = replaysLostResponse
     }
 }
 
@@ -179,7 +185,9 @@ public enum Endpoints {
     // MARK: Account
 
     public static let accountExport = APIEndpoint(path: "/v1/account/export")
-    public static let accountDelete = APIEndpoint(path: "/v1/account/delete")
+    public static let accountDelete = APIEndpoint(
+        path: "/v1/account/delete", refreshesAuth: false, replaysLostResponse: true,
+    )
 
     // MARK: World events (for debug diagnostics only)
 

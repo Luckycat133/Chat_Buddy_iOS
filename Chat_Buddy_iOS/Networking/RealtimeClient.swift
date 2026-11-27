@@ -80,7 +80,7 @@ public actor RealtimeClient {
             stateValue = .idle
             return
         }
-        guard task == nil else { return }
+        guard !explicitPause, !Task.isCancelled, task == nil else { return }
         stateValue = .connecting
 
         var request = URLRequest(url: environment.realtimeURL)

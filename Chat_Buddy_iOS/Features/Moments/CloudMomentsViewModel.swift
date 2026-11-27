@@ -24,7 +24,12 @@ public final class CloudMomentsViewModel: ObservableObject {
     @Published public var audienceClass: String = "familiar"
     @Published public private(set) var pendingMediaAssetIds: [String] = []
 
-    public var app: CloudAppState?
+    private weak var boundApp: CloudAppState?
+    private var generation: UUID?
+    private var app: CloudAppState? {
+        guard let boundApp, boundApp.sessionGeneration == generation else { return nil }
+        return boundApp
+    }
     private var nextCursor: String?
     private var viewedMomentIds = Set<String>()
     private let logger = CloudLogger.cache
@@ -34,12 +39,14 @@ public final class CloudMomentsViewModel: ObservableObject {
     nonisolated deinit {}
 
     public init(app: CloudAppState? = nil) {
-        self.app = app
+        if let app { bind(app: app) }
     }
 
     /// Bind the live `CloudAppState` once the SwiftUI environment is wired.
     public func bind(app: CloudAppState) {
-        self.app = app
+        guard generation == nil else { return }
+        boundApp = app
+        generation = app.sessionGeneration
     }
 
     // MARK: Feed
@@ -48,9 +55,12 @@ public final class CloudMomentsViewModel: ObservableObject {
     /// first page from the network.
     public func load() async {
         guard let app = app else { return }
-        moments = await app.moments.cachedFeed()
+        let repository = app.moments
+        moments = await repository.cachedFeed()
+        guard self.app != nil else { return }
         do {
-            let page = try await app.moments.list(cursor: nil)
+            let page = try await repository.list(cursor: nil)
+            guard self.app != nil else { return }
             merge(page.items)
             nextCursor = page.nextCursor
             canLoadMore = page.nextCursor != nil
@@ -93,12 +103,13 @@ public final class CloudMomentsViewModel: ObservableObject {
     // MARK: Optimistic reactions/comments
 
     public func react(to momentId: String, kind: String = "reaction") async {
+        guard let app else { return }
         let localId = "pending-\(UUID().uuidString)"
         appendPending(MomentPendingInteraction(
             id: localId, momentId: momentId, type: kind, content: nil, state: .sending,
         ))
         do {
-            _ = try await app?.moments.interact(momentId: momentId, type: kind)
+            _ = try await app.moments.interact(momentId: momentId, type: kind)
             resolvePending(localId: localId)
             await load()
         } catch {
@@ -108,6 +119,7 @@ public final class CloudMomentsViewModel: ObservableObject {
     }
 
     public func comment(to momentId: String, content: String) async {
+        guard let app else { return }
         let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let localId = "pending-\(UUID().uuidString)"
@@ -115,7 +127,7 @@ public final class CloudMomentsViewModel: ObservableObject {
             id: localId, momentId: momentId, type: "comment", content: text, state: .sending,
         ))
         do {
-            _ = try await app?.moments.interact(momentId: momentId, type: "comment", content: text)
+            _ = try await app.moments.interact(momentId: momentId, type: "comment", content: text)
             resolvePending(localId: localId)
             await load()
         } catch {

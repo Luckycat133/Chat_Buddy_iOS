@@ -5,18 +5,9 @@ import os
 /// Session lifecycle service per skill §"Authentication" (IOS_IMPLEMENTATION §5):
 /// token refresh, multi-device revocation, and Apple credential revocation.
 ///
-/// Extracted as a standalone type so the flow is testable and so it can be
-/// wired into `CloudAppState` with two lines once the tree quiesces:
-///
-///     let authService = AuthService(auth: auth, http: client)
-///     await authService.installUnauthorizedHandler(on: client)
-///
-/// On every 401 the HTTPClient invokes the installed handler exactly once:
-///   1. try `POST /v1/auth/refresh` with the stored refresh token
-///   2. on success the session is updated (rotating refresh supported)
-///   3. on failure the session is treated as revoked: clear Keychain
-///      material, disconnect realtime, and report revocation so app state
-///      can route to sign-in (multi-device sign-out lands here too).
+/// One refresh serves the protected requests rejected with the same token.
+/// Transport failures preserve the offline session; a rejected refresh
+/// delegates to the account owner's teardown.
 public actor AuthService {
 
     /// Reasons the session can end; surfaced so app state can log or
@@ -27,23 +18,31 @@ public actor AuthService {
         case signedOut
     }
 
-    /// Called after local session material is cleared. App state subscribes
-    /// to route to `.unauthenticated` (CloudAppState owns `stage`).
     private var onRevoked: (@Sendable (RevocationReason) async -> Void)?
+
+    private enum Outcome: Sendable {
+        case refreshed
+        case rejected
+        case unavailable
+    }
 
     private let auth: AuthSession
     private let http: HTTPClient
+    private let lifetime: CloudAccountLifetime?
+    private var inFlight: Task<Outcome, Never>?
+    private var revoked = false
     private let logger = CloudLogger.auth
 
-    public init(auth: AuthSession, http: HTTPClient) {
+    public init(auth: AuthSession, http: HTTPClient, lifetime: CloudAccountLifetime? = nil) {
         self.auth = auth
         self.http = http
+        self.lifetime = lifetime
     }
 
     /// Install the 401 hook on the shared HTTPClient.
     public func installUnauthorizedHandler(on client: HTTPClient) async {
-        await client.setUnauthorizedHandler { [weak self] in
-            await self?.handleUnauthorized()
+        await client.setUnauthorizedHandler { [weak self] rejectedToken in
+            await self?.handleUnauthorized(rejectedToken: rejectedToken) ?? false
         }
     }
 
@@ -62,9 +61,11 @@ public actor AuthService {
     /// stored session; non-rotating servers reuse the current material.
     @discardableResult
     public func refreshSession() async -> Bool {
-        guard let refreshToken = await auth.currentRefreshToken() else {
-            return false
-        }
+        guard let current = await auth.currentSession() else { return false }
+        return await handleUnauthorized(rejectedToken: current.accessToken)
+    }
+
+    private func refresh(_ previous: SessionSnapshot) async -> Outcome {
         struct Body: Codable, Sendable { let refreshToken: String }
         struct Response: Codable, Sendable {
             let accessToken: String
@@ -75,38 +76,51 @@ public actor AuthService {
             let response = try await http.send(
                 Endpoints.refresh,
                 method: "POST",
-                body: Body(refreshToken: refreshToken),
+                body: Body(refreshToken: previous.refreshToken),
                 as: Response.self,
             )
-            await auth.update(
+            guard lifetime?.isActive != false, !response.accessToken.isEmpty,
+                  response.accessExpiresAt > Date()
+            else { return .unavailable }
+            let applied = await auth.applyRefresh(
+                previous: previous,
                 accessToken: response.accessToken,
-                accessExpiresAt: response.accessExpiresAt,
+                refreshToken: response.refreshToken ?? previous.refreshToken,
+                expiresAt: response.accessExpiresAt,
             )
-            if let rotated = response.refreshToken, rotated != refreshToken {
-                await auth.rotate(refreshToken: rotated)
-            }
-            return true
+            return applied ? .refreshed : .unavailable
+        } catch let error as APIError where error.status == 401 || error.code == .unauthorized {
+            return .rejected
         } catch {
-            logger.notice("token refresh failed: \(String(describing: error), privacy: .public)")
-            return false
+            return .unavailable
         }
     }
 
-    /// 401 path: refresh once so the client's single retry can succeed.
-    /// A rejected refresh means the session is dead server-side.
-    func handleUnauthorized() async {
-        if await refreshSession() { return }
-        await performSessionRevocation(.refreshRejected)
+    func handleUnauthorized(rejectedToken: String) async -> Bool {
+        guard let current = await auth.currentSession(), !revoked, lifetime?.isActive != false else {
+            return false
+        }
+        if current.accessToken != rejectedToken { return true }
+        if let inFlight { return await inFlight.value == .refreshed }
+        let task = Task { await refresh(current) }
+        inFlight = task
+        let outcome = await task.value
+        inFlight = nil
+        if outcome == .rejected { await performSessionRevocation(.refreshRejected) }
+        return outcome == .refreshed
     }
 
     // MARK: - Revocation
 
-    /// Clear local session material and notify app state. Cached rows and
-    /// the legacy UserDefaults import source are intentionally NOT erased.
     public func performSessionRevocation(_ reason: RevocationReason) async {
+        guard !revoked, lifetime?.isActive != false else { return }
+        revoked = true
         logger.notice("session revoked: \(String(describing: reason), privacy: .public)")
-        await auth.clear()
-        await onRevoked?(reason)
+        if let onRevoked {
+            await onRevoked(reason)
+        } else {
+            await auth.clear()
+        }
     }
 
     /// Check the Sign in with Apple credential state (§5 "revoked
