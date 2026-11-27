@@ -216,6 +216,15 @@ final class OnboardingHydrationTests: XCTestCase {
 
     // MARK: Read-through synthesis from the server unread badge
 
+    func testAuthoritativeReadCursorSurvivesSparseMessageSequences() {
+        let sequences = [10, 12]
+        let cursor = ConversationRepository.readThroughSequence(
+            maxMessageSequence: 12, serverUnreadCount: 0, serverCursor: 9,
+        )
+        XCTAssertEqual(cursor, 9)
+        XCTAssertEqual(sequences.filter { $0 > cursor }.count, 2)
+    }
+
     func testReadThroughSequenceMath() {
         // All read: cursor sits on the newest message.
         XCTAssertEqual(

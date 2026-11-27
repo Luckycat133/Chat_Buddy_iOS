@@ -73,7 +73,9 @@ public final class CloudChatViewModel: ObservableObject {
         }
         await refreshOutboxSnapshots()
         rebuildRows()
-        await conversations.markReadLocally(conversationId: conversationId)
+        if let actorId = await app.auth.currentActorId(), self.app != nil {
+            await conversations.markReadLocally(conversationId: conversationId, myActorId: actorId)
+        }
     }
 
     /// Pull outbox rows for this conversation into pure snapshots.
