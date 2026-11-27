@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Typed projection used to read threads and resolve attachments. The original
 /// document is retained separately so unknown local fields and all bytes round-trip.
@@ -58,6 +59,44 @@ struct PortableAccountBackup {
     let account: Account?
     let attachments: [Attachment]
     let localChats: [WebV2ChatArchive.Thread]
+    private let localImages: [String: Attachment]
+
+    var sha256: String {
+        SHA256.hash(data: document).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func attachments(for message: WebV2ChatArchive.Message) -> [Attachment] {
+        var references = message.attachmentIDs
+        if message.content.hasPrefix("[IMG:"), message.content.hasSuffix("]") {
+            references.append(String(message.content.dropFirst("[IMG:".count).dropLast()))
+        }
+        var seen = Set<String>()
+        var output = references.filter { seen.insert($0).inserted }.enumerated().map { index, reference in
+            localImages[reference] ?? Self.inlineImage(id: message.id + "-inline-" + String(index), encoded: reference)
+                ?? Attachment(id: reference, name: "Image", mimeType: "application/octet-stream", byteLength: 0, contentBase64: nil)
+        }
+        if message.content.hasPrefix("[FILE]") {
+            output.append(Attachment(id: message.id + "-file",
+                                     name: String(message.content.dropFirst("[FILE]".count)).trimmingCharacters(in: .whitespaces),
+                                     mimeType: "application/octet-stream", byteLength: 0, contentBase64: nil))
+        }
+        return output
+    }
+
+    private static func inlineImage(id: String, encoded: String) -> Attachment? {
+        let parts = encoded.split(separator: ",", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        let mimeType: String
+        switch parts[0] {
+        case "data:image/png;base64": mimeType = "image/png"
+        case "data:image/jpeg;base64": mimeType = "image/jpeg"
+        default: return nil
+        }
+        let base64 = String(parts[1])
+        guard let bytes = Data(base64Encoded: base64), bytes.base64EncodedString() == base64 else { return nil }
+        return Attachment(id: id, name: id, mimeType: mimeType, byteLength: bytes.count, contentBase64: base64)
+    }
+
 
     init(document: Data) throws {
         guard document.count <= Self.maxBytes,
@@ -94,6 +133,18 @@ struct PortableAccountBackup {
         } catch WebV2ChatArchive.ArchiveError.noChats {
             localChats = []
         }
+        let json = try JSONSerialization.jsonObject(with: document) as? [String: Any]
+        let indexed = json?["indexedDB"] as? [String: Any]
+        let imagesDB = indexed?["chat-buddy-images"] as? [String: Any]
+        let rows = imagesDB?["images"] as? [[String: Any]] ?? []
+        var localImages = [String: Attachment]()
+        for row in rows {
+            guard let id = row["id"] as? String, let data = row["data"] as? String,
+                  localImages[id] == nil else { throw BackupError.invalidAttachment }
+            localImages[id] = Self.inlineImage(id: id, encoded: data)
+                ?? Attachment(id: id, name: id, mimeType: "application/octet-stream", byteLength: 0, contentBase64: nil)
+        }
+        self.localImages = localImages
         self.document = document
         self.account = projection.cloudAccount
         self.attachments = attachments
@@ -102,11 +153,13 @@ struct PortableAccountBackup {
     enum BackupError: LocalizedError {
         case invalidDocument
         case invalidAttachment
+        case transferMismatch
 
         var errorDescription: String? {
             switch self {
             case .invalidDocument: "Unsupported Web v2 backup."
             case .invalidAttachment: "The backup contains an invalid attachment or reference."
+            case .transferMismatch: "The stored backup does not match this file."
             }
         }
     }
@@ -133,6 +186,8 @@ struct PortableAccountBackupService {
         guard let document = String(data: backup.document, encoding: .utf8) else {
             throw PortableAccountBackup.BackupError.invalidDocument
         }
-        return try await http.send(Endpoints.portableAccountBackup, method: "PUT", body: Import(document: document))
+        let receipt: Receipt = try await http.send(Endpoints.portableAccountBackup, method: "PUT", body: Import(document: document))
+        guard receipt.sha256 == backup.sha256 else { throw PortableAccountBackup.BackupError.transferMismatch }
+        return receipt
     }
 }

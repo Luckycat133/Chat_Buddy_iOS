@@ -40,7 +40,7 @@ struct MeTabView: View {
                         WebV2ChatArchiveView()
                     }
                     NavigationLink(loc.uiLanguage.resolved == .zh ? "跨端账号备份" : "Portable account backup") {
-                        PortableAccountBackupView()
+                        PortableAccountBackupView().id(cloud.sessionGeneration)
                     }
                     Button(role: .destructive) {
                         showDeleteAccount = true

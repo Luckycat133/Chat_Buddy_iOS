@@ -111,10 +111,29 @@ public actor HTTPClient {
     /// realtime channel owns stream delivery.
     public func sendRaw(_ endpoint: APIEndpoint) async throws -> Data {
         let request = try await buildRequest(endpoint, method: "GET", body: nil)
+        do {
+            return try await performRaw(request)
+        } catch let error as APIError where error.code == .unauthorized && endpoint.requiresAuth && endpoint.refreshesAuth {
+            try await refreshAuthorization(for: request, unauthorized: error)
+            let retry = try await buildRequest(endpoint, method: "GET", body: nil)
+            return try await performRaw(retry)
+        }
+    }
+
+    private func performRaw(_ request: URLRequest) async throws -> Data {
         let (data, response) = try await urlSession.data(for: request)
         try lifetime?.check()
         try validate(response: response, data: data, requestId: headerValue(response: response, name: "x-request-id"))
         return data
+    }
+
+    private func refreshAuthorization(for request: URLRequest, unauthorized error: APIError) async throws {
+        guard let unauthorizedHandler,
+              let authorization = request.value(forHTTPHeaderField: "authorization"),
+              authorization.hasPrefix("Bearer ")
+        else { throw error }
+        try lifetime?.check()
+        guard await unauthorizedHandler(String(authorization.dropFirst("Bearer ".count))) else { throw error }
     }
 
     private func send<T: Decodable>(
@@ -133,12 +152,7 @@ public actor HTTPClient {
             try lifetime?.check()
             return try await perform(request, endpoint: endpoint)
         } catch let error as APIError where error.code == .unauthorized && endpoint.requiresAuth && endpoint.refreshesAuth {
-            guard let unauthorizedHandler,
-                  let authorization = request.value(forHTTPHeaderField: "authorization"),
-                  authorization.hasPrefix("Bearer ")
-            else { throw error }
-            try lifetime?.check()
-            guard await unauthorizedHandler(String(authorization.dropFirst("Bearer ".count))) else { throw error }
+            try await refreshAuthorization(for: request, unauthorized: error)
             let retry = try await buildRequest(endpoint, method: method, body: requestBody)
             return try await perform(retry, endpoint: endpoint)
         }

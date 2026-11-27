@@ -19,24 +19,37 @@ struct PortableAccountBackupView: View {
         List {
             Section {
                 Button(label("导出当前帐号聊天", "Export current account chats")) {
-                    run { prepareExport(try await service.read(live: true)) }
+                    run { generation in
+                        let backup = try await service.read(live: true)
+                        guard generation == cloud.sessionGeneration else { return }
+                        prepareExport(backup)
+                    }
                 }
                 Button(label("选择 Web v2 备份", "Select a Web v2 backup")) { picking = true }
                 if let pending {
                     Button(label("导入并替换已保存的备份", "Import and replace saved backup")) {
-                        run {
-                            _ = try await service.restore(pending)
-                            restored = try await service.read(live: false)
+                        run { generation in
+                            let importer = service
+                            _ = try await importer.restore(pending)
+                            guard generation == cloud.sessionGeneration else { return }
+                            let reread = try await importer.read(live: false)
+                            guard generation == cloud.sessionGeneration else { return }
+                            guard reread.sha256 == pending.sha256 else { throw PortableAccountBackup.BackupError.transferMismatch }
+                            restored = reread
                             self.pending = nil
                         }
                     }
                 }
                 Button(label("读取已导入备份", "Open imported backup")) {
-                    run { restored = try await service.read(live: false) }
+                    run { generation in
+                        let backup = try await service.read(live: false)
+                        guard generation == cloud.sessionGeneration else { return }
+                        restored = backup
+                    }
                 }
             } footer: {
-                Text(label("备份与当前账号绑定。导入只替换帐号里保存的备份，不会更改在线会话、成员身份或权限。",
-                           "Backups bind to this account. Import replaces its saved backup, not live conversations, members, or permissions."))
+                Text(label("备份与当前账号绑定。导入只替换帐号里保存的备份，不会更改在线会话、成员身份或权限。单个文件最多 4 MiB。",
+                           "Backups bind to this account. Import replaces its saved backup, not live conversations, members, or permissions. Maximum 4 MiB."))
             }
             .disabled(busy)
             if let restored {
@@ -46,6 +59,7 @@ struct PortableAccountBackupView: View {
                         NavigationLink(conversation.publicName ?? conversation.id) {
                             List(conversation.messages) { message in
                                 VStack(alignment: .leading, spacing: 4) {
+                                    Text(message.senderActorId).font(.caption.weight(.semibold))
                                     Text(message.content).textSelection(.enabled)
                                     ForEach(Array((message.attachmentIds ?? []).enumerated()), id: \.offset) { _, id in
                                         if let attachment = restored.attachments.first(where: { $0.id == id }) {
@@ -60,7 +74,15 @@ struct PortableAccountBackupView: View {
                     ForEach(restored.localChats) { thread in
                         NavigationLink(thread.name) {
                             List(thread.messages) { message in
-                                Text(message.content).textSelection(.enabled)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(message.senderID).font(.caption.weight(.semibold))
+                                    if !message.content.hasPrefix("[IMG:") {
+                                        Text(message.content).textSelection(.enabled)
+                                    }
+                                    ForEach(restored.attachments(for: message)) { attachment in
+                                        attachmentContent(attachment)
+                                    }
+                                }
                             }
                             .navigationTitle(thread.name)
                         }
@@ -70,6 +92,13 @@ struct PortableAccountBackupView: View {
             if let error { Text(error).foregroundStyle(.red) }
         }
         .navigationTitle(label("跨端账号备份", "Portable account backup"))
+        .onChange(of: cloud.sessionGeneration) { _, _ in
+            pending = nil
+            restored = nil
+            exportDocument = nil
+            exporting = false
+            error = nil
+        }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.json]) { result in
             pending = nil
             do {
@@ -111,12 +140,16 @@ struct PortableAccountBackupView: View {
         exporting = true
     }
 
-    private func run(_ work: @escaping @MainActor () async throws -> Void) {
+    private func run(_ work: @escaping @MainActor (UUID) async throws -> Void) {
+        let generation = cloud.sessionGeneration
         busy = true
         error = nil
         Task {
             defer { busy = false }
-            do { try await work() } catch { self.error = error.localizedDescription }
+            do { try await work(generation) }
+            catch {
+                if generation == cloud.sessionGeneration { self.error = error.localizedDescription }
+            }
         }
     }
 

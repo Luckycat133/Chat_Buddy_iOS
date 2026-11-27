@@ -18,7 +18,13 @@ final class PortableAccountBackupTests: XCTestCase {
         let bytes = try fixture()
         let backup = try PortableAccountBackup(document: bytes)
         XCTAssertEqual(backup.document, bytes)
-        XCTAssertEqual(backup.localChats.first?.messages.first?.content, "本地消息")
+        let local = try XCTUnwrap(backup.localChats.first?.messages.first)
+        XCTAssertEqual(local.content, "本地消息")
+        XCTAssertEqual(local.senderID, "user-me")
+        let localAttachments = backup.attachments(for: local)
+        XCTAssertEqual(localAttachments.map(\.id), ["image-local-1", "missing-remote-image"])
+        XCTAssertEqual(localAttachments[0].verifiedInlineBytes, backup.attachments[0].verifiedInlineBytes)
+        XCTAssertNil(localAttachments[1].verifiedInlineBytes)
         XCTAssertEqual(backup.account?.displayName, "合成账户")
         let thread = try XCTUnwrap(backup.account?.conversations.first)
         XCTAssertEqual(thread.lastReadSequence, 2)
@@ -45,7 +51,8 @@ final class PortableAccountBackupTests: XCTestCase {
     func testActualHTTPClientImportsAndRedownloadsByteIdenticalGolden() async throws {
         let bytes = try fixture()
         let script = OutboxHTTPStub.Script([
-            .response(200, Data(#"{"sha256":"fixture-checksum","updated":true}"#.utf8)),
+            .response(200, try JSONSerialization.data(withJSONObject: ["sha256": PortableAccountBackup(document: bytes).sha256, "updated": true])),
+            .response(401, Data(#"{"error":{"code":"UNAUTHORIZED","message":"fixture expired"}}"#.utf8)),
             .response(200, bytes),
             .response(200, bytes),
         ])
@@ -59,9 +66,17 @@ final class PortableAccountBackupTests: XCTestCase {
             apiBaseURL: url, realtimeURL: url, bundleIdentifier: "backup-fixture", buildNumber: "1",
             enableDiagnostics: false, apnsEnvironment: .sandbox
         )
-        let client = HTTPClient(environment: environment,
-                                session: AuthSession(environment: environment, service: "backup-fixture.\(UUID().uuidString)"),
-                                urlSession: session)
+        let auth = AuthSession(environment: environment, service: "backup-fixture.\(UUID().uuidString)")
+        let expiry = Date().addingTimeInterval(600)
+        await auth.update(tokens: AuthTokens(accessToken: "fixture-old", refreshToken: "fixture-refresh",
+                                             accountId: "fixture-account", actorId: "fixture-person", accessExpiresAt: expiry))
+        let client = HTTPClient(environment: environment, session: auth, urlSession: session)
+        await client.setUnauthorizedHandler { rejected in
+            guard rejected == "fixture-old" else { return false }
+            await auth.update(tokens: AuthTokens(accessToken: "fixture-new", refreshToken: "fixture-refresh",
+                                                 accountId: "fixture-account", actorId: "fixture-person", accessExpiresAt: expiry))
+            return true
+        }
         let service = PortableAccountBackupService(http: client)
         let receipt = try await service.restore(PortableAccountBackup(document: bytes))
         XCTAssertTrue(receipt.updated)
@@ -71,8 +86,11 @@ final class PortableAccountBackupTests: XCTestCase {
         XCTAssertEqual(stored.attachments.first?.verifiedInlineBytes, live.attachments.first?.verifiedInlineBytes)
         XCTAssertEqual(stored.account?.conversations.first?.messages.last?.replyToMessageId, "cloud-message-1")
         XCTAssertEqual(live.document, bytes)
-        XCTAssertEqual(script.requests.map(\.method), ["PUT", "GET", "GET"])
-        XCTAssertEqual(script.requests.map(\.path), ["/v1/account/backup", "/v1/account/backup", "/v1/account/backup/live"])
+        XCTAssertEqual(receipt.sha256, stored.sha256)
+        XCTAssertEqual(receipt.sha256, live.sha256)
+        XCTAssertEqual(script.requests.map(\.authorization), ["Bearer fixture-old", "Bearer fixture-old", "Bearer fixture-new", "Bearer fixture-new"])
+        XCTAssertEqual(script.requests.map(\.method), ["PUT", "GET", "GET", "GET"])
+        XCTAssertEqual(script.requests.map(\.path), ["/v1/account/backup", "/v1/account/backup", "/v1/account/backup", "/v1/account/backup/live"])
         let uploaded = try XCTUnwrap(JSONSerialization.jsonObject(with: script.requests[0].body) as? [String: String])
         XCTAssertEqual(Data(try XCTUnwrap(uploaded["document"]).utf8), bytes)
     }

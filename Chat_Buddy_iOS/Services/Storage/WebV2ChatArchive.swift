@@ -16,6 +16,7 @@ struct WebV2ChatArchive {
         let content: String
         let timestamp: String?
         let quotedMessageID: String?
+        let attachmentIDs: [String]
     }
 
     let threads: [Thread]
@@ -88,7 +89,8 @@ struct WebV2ChatArchive {
                 }
                 return Message(id: messageID, senderID: sender, content: content,
                                timestamp: message["timestamp"] as? String,
-                               quotedMessageID: message["quotedMessageId"] as? String)
+                               quotedMessageID: message["quotedMessageId"] as? String,
+                               attachmentIDs: message["attachmentIds"] as? [String] ?? [])
             }
             let name = (row["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? id
             return Thread(id: id, name: name, messages: messages)
