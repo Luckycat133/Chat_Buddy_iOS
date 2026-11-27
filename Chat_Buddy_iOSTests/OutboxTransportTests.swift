@@ -119,6 +119,53 @@ final class OutboxTransportTests: XCTestCase {
         XCTAssertEqual(script.requests.map(\.method), ["POST", "GET", "GET"])
     }
 
+    func testSparseReadCursorStaysActorScopedAfterRetryingCachedRead() async throws {
+        let body = Data("""
+        {"items":[{"id":"\(conversationId)","type":"group","publicName":"Fixture",
+        "createdAt":"2026-11-27T00:00:00Z","lastReadSequence":9}]}
+        """.utf8)
+        let script = OutboxHTTPStub.Script([.timeout, .response(200, body)])
+        let url = OutboxHTTPStub.install(script)
+        defer { OutboxHTTPStub.remove(url) }
+        let session = makeSession()
+        defer { session.invalidateAndCancel() }
+        let context = ModelContext(try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema))
+        let outbox = OutboxStore(context: context)
+        let repository = makeRepository(makeClient(url, session: session), context: context, outbox: outbox)
+
+        do {
+            _ = try await repository.listConversations()
+            XCTFail("The first list request should time out")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .timedOut)
+        }
+        let summaries = try await repository.listConversations()
+        let summary = try XCTUnwrap(summaries.first)
+        XCTAssertEqual(summary.lastReadSequence, 9)
+        let messages = [10, 12].map { sequence in
+            RemoteMessageDTO(
+                id: "message-\(sequence)", conversationId: conversationId, senderActorId: "friend",
+                sequence: sequence, clientIdempotencyKey: "fixture-\(sequence)", kind: "text",
+                content: "message", structuredPayload: nil, replyToMessageId: nil, burstId: nil,
+                status: "accepted", createdAt: Date(), editedAt: nil, deletedAt: nil,
+            )
+        }
+        await repository.hydrateOnboardingConversation(summary: summary, messages: messages, myActorId: "owner")
+        context.insert(CachedConversationMember(
+            conversationId: conversationId, actorId: "friend", status: "active", role: "member",
+            invitedByActorId: nil, joinedAt: nil, leftAt: nil, lastReadSequence: 3,
+        ))
+        try context.save()
+        let before = await repository.cachedConversationList(myActorId: "owner")
+        XCTAssertEqual(before.first?.unreadCount, 2)
+        await repository.markReadLocally(conversationId: conversationId, myActorId: "owner")
+        let after = await repository.cachedConversationList(myActorId: "owner")
+        XCTAssertEqual(after.first?.unreadCount, 0)
+        let persisted = try context.fetch(FetchDescriptor<CachedConversationMember>())
+        XCTAssertEqual(persisted.first(where: { $0.actorId == "owner" })?.lastReadSequence, 12)
+        XCTAssertEqual(persisted.first(where: { $0.actorId == "friend" })?.lastReadSequence, 3)
+    }
+
     private func assertMessageRequest(
         _ request: OutboxHTTPStub.CapturedRequest, key: String, replyId: String?,
     ) throws {
