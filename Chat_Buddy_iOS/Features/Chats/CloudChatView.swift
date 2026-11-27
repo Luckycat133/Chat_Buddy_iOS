@@ -27,8 +27,10 @@ public struct CloudChatView: View {
     public var body: some View {
         VStack(spacing: 0) {
             timeline
-            Divider()
-            composer
+            if !viewModel.isReadOnlyRestoreWindow {
+                Divider()
+                composer
+            }
         }
         .navigationTitle(viewModel.conversationTitle)
         .navigationBarTitleDisplayMode(.inline)

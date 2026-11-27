@@ -20,6 +20,7 @@ public final class CloudChatViewModel: ObservableObject {
 
     public let conversationId: String
     private let initialMessageCursor: Int?
+    public var isReadOnlyRestoreWindow: Bool { initialMessageCursor != nil }
     private var messagePageSize: Int { initialMessageCursor == nil ? 50 : 200 }
     private weak var boundApp: CloudAppState?
     private var generation: UUID?
@@ -52,7 +53,7 @@ public final class CloudChatViewModel: ObservableObject {
     }
 
     public var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !isReadOnlyRestoreWindow && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: Load
@@ -75,9 +76,9 @@ public final class CloudChatViewModel: ObservableObject {
             } ?? cached
             self.error = String(describing: error)
         }
-        await refreshOutboxSnapshots()
+        if !isReadOnlyRestoreWindow { await refreshOutboxSnapshots() }
         rebuildRows()
-        if let actorId = await app.auth.currentActorId(), self.app != nil {
+        if !isReadOnlyRestoreWindow, let actorId = await app.auth.currentActorId(), self.app != nil {
             await conversations.markReadLocally(conversationId: conversationId, myActorId: actorId)
         }
     }
@@ -104,7 +105,7 @@ public final class CloudChatViewModel: ObservableObject {
     // MARK: Send (optimistic, never locks)
 
     public func send() async {
-        guard let app = app else { return }
+        guard !isReadOnlyRestoreWindow, let app = app else { return }
         let conversations = app.conversations
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -141,7 +142,7 @@ public final class CloudChatViewModel: ObservableObject {
 
     /// Retry a failed optimistic row by idempotency key.
     public func retry(row: ChatRowModel) async {
-        guard let app, let key = row.idempotencyKey, row.isLocalOnly else { return }
+        guard !isReadOnlyRestoreWindow, let app, let key = row.idempotencyKey, row.isLocalOnly else { return }
         do {
             _ = try await app.conversations.flushOne(idempotencyKey: key)
             error = nil
@@ -155,11 +156,11 @@ public final class CloudChatViewModel: ObservableObject {
     /// Server reconcile: re-read the authoritative timeline. Optimistic
     /// rows vanish once the server acknowledges their idempotency keys.
     public func reconcile() async {
-        guard let app else { return }
+        guard !isReadOnlyRestoreWindow, let app else { return }
         do {
             serverMessages = ChatOutboxReducer.reconciled(
                 server: try await app.conversations.listMessages(
-                    conversationId: conversationId, cursor: initialMessageCursor, limit: messagePageSize,
+                    conversationId: conversationId,
                 ),
             )
             error = nil
@@ -171,7 +172,7 @@ public final class CloudChatViewModel: ObservableObject {
     }
 
     public func flushOutbox() async throws {
-        guard let app = app else { return }
+        guard !isReadOnlyRestoreWindow, let app = app else { return }
         _ = try await app.conversations.flushOutbox()
         await refreshOutboxSnapshots()
         rebuildRows()
