@@ -20,3 +20,15 @@ This is not lossless cross-platform migration and is not the Web archive
 gate. Cloud account migration still requires a canonical mapping for identity,
 conversations, messages, persona/media references, and other backup data,
 and a transactional import/re-export path on both platforms.
+
+## Account-bound backup transfer
+
+The separate **Portable account backup** screen calls the shared runtime's
+`GET /v1/account/backup/live` to export currently visible conversations,
+`PUT /v1/account/backup` to replace one validated private archive, and
+`GET /v1/account/backup` to read/re-export it byte-for-byte. Import never
+restores login credentials or inserts live conversations/messages. This is
+separate from the old offline viewer and legacy import. Inline PNG/JPEG is
+previewed if decodable; reference-only and unsupported media has an explicit
+placeholder and remains intact in the exported document. Open these files
+only with your own account; cross-account import is intentionally rejected.

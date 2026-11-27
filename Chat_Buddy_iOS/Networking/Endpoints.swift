@@ -154,6 +154,8 @@ public enum Endpoints {
     /// One-time normalized legacy import batch (skill §17). Never carries
     /// API credentials — see `LegacyImportPayloadBuilder`.
     public static let accountImport = APIEndpoint(path: "/v1/account/import")
+    static let portableAccountBackup = APIEndpoint(path: "/v1/account/backup")
+    static let portableLiveAccountBackup = APIEndpoint(path: "/v1/account/backup/live")
 
     // MARK: Memory
 

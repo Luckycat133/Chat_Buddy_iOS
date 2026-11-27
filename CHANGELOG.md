@@ -11,6 +11,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.5] - 2026-11-27
+
+### Added
+- View and re-export Web v2 attachments and account-bound chat archives from cloud settings without modifying live chat membership or authorship.
+
+---
+
 ## [0.11.4] - 2026-11-27
 
 ### Added
