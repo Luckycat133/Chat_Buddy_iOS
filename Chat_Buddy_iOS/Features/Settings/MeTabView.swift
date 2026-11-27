@@ -33,6 +33,9 @@ struct MeTabView: View {
                     NavigationLink(loc.t("cloud_me_legacy_import")) {
                         LegacyImportView()
                     }
+                    NavigationLink(loc.uiLanguage.resolved == .zh ? "跨端语言与外观" : "Portable language and appearance") {
+                        PortablePreferencesView()
+                    }
                     Button(role: .destructive) {
                         showDeleteAccount = true
                     } label: {
