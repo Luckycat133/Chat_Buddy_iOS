@@ -476,6 +476,40 @@ public enum EventApplier {
         try context.save()
     }
 
+    /// REST refresh after a private archive merge. Existing cache rows and
+    /// tombstones win so a delayed page cannot overwrite a newer sync result.
+    static func cacheArchiveMergeRows(
+        conversationId: String,
+        summary: ConversationRepository.ConversationListItem?,
+        messages: [RemoteMessageDTO],
+        myActorId: String,
+        in context: ModelContext,
+    ) throws {
+        guard try !hasTombstone(table: "conversations", rowId: conversationId, in: context) else { return }
+        if let summary, summary.id == conversationId, try fetchConversation(id: conversationId, in: context) == nil {
+            try applyConversation(RemoteConversationDTO(
+                id: conversationId, socialGraphId: "", type: summary.type, publicName: summary.publicName,
+                createdByActorId: "", status: "active", createdAt: summary.lastActivityAt ?? Date(),
+            ), in: context)
+        }
+        // Use only an explicitly returned server cursor and never replace an
+        // existing local member, which may have a more recent read cursor.
+        if let summary, summary.id == conversationId, let readThrough = summary.lastReadSequence,
+           try fetchMember(conversationId: conversationId, actorId: myActorId, in: context) == nil {
+            try applyConversationMember(RemoteConversationMemberDTO(
+                id: nil, conversationId: conversationId, actorId: myActorId, status: "active",
+                role: "member", invitedByActorId: nil, joinedAt: nil, leftAt: nil,
+                lastReadSequence: readThrough,
+            ), in: context)
+        }
+        for dto in messages where dto.conversationId == conversationId && dto.deletedAt == nil {
+            if try hasTombstone(table: "messages", rowId: dto.id, in: context) { continue }
+            if try fetchMessage(id: dto.id, in: context) != nil { continue }
+            try upsertMessage(dto, id: dto.id, in: context)
+        }
+        try context.save()
+    }
+
     private static func hasTombstone(table: String, rowId: String, in context: ModelContext) throws -> Bool {
         let tombstones = try context.fetch(
             FetchDescriptor<CachedTombstone>(predicate: #Predicate {

@@ -89,6 +89,31 @@ final class EventApplierTests: XCTestCase {
         // Cursor is NOT advanced by the applier — the coordinator owns it.
     }
 
+    func testArchiveRefreshDoesNotOverwriteExistingRowsOrResurrectTombstones() throws {
+        let original = try envelope(upserts: [("messages", "msg-1", messageJSON)],
+                                    tombstones: [("messages", "deleted")])
+        _ = try EventApplier.apply(envelope: original, in: context)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601WithFractional
+        let delayed = messageJSON.replacingOccurrences(of: "hello", with: "stale content")
+        let added = messageJSON.replacingOccurrences(of: "msg-1", with: "new")
+            .replacingOccurrences(of: "\"sequence\":3", with: "\"sequence\":4")
+        let deleted = messageJSON.replacingOccurrences(of: "msg-1", with: "deleted")
+        let rows = try [delayed, added, deleted].map {
+            try decoder.decode(RemoteMessageDTO.self, from: Data($0.utf8))
+        }
+        for _ in 0..<2 {
+            try EventApplier.cacheArchiveMergeRows(
+                conversationId: "conv-1", summary: nil, messages: rows,
+                myActorId: "fixture", in: context,
+            )
+        }
+        let result = try context.fetch(FetchDescriptor<CachedMessage>())
+        XCTAssertEqual(Set(result.map(\.id)), Set(["msg-1", "new"]))
+        XCTAssertEqual(result.first(where: { $0.id == "msg-1" })?.content, "hello")
+        XCTAssertEqual(result.first(where: { $0.id == "new" })?.sequence, 4)
+    }
+
     func testReapplyingSameEnvelopeDoesNotDuplicateRows() throws {
         let env = try envelope(upserts: [
             ("actors", "actor-mira", actorJSON),

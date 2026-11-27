@@ -156,6 +156,8 @@ public enum Endpoints {
     public static let accountImport = APIEndpoint(path: "/v1/account/import")
     static let portableAccountBackup = APIEndpoint(path: "/v1/account/backup")
     static let portableLiveAccountBackup = APIEndpoint(path: "/v1/account/backup/live")
+    static let portableBackupMergePreview = APIEndpoint(path: "/v1/account/backup/merge/preview")
+    static let portableBackupMergeCommit = APIEndpoint(path: "/v1/account/backup/merge/commit")
 
     // MARK: Memory
 

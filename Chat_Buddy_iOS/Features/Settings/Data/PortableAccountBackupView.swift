@@ -12,6 +12,11 @@ struct PortableAccountBackupView: View {
     @State private var pending: PortableAccountBackup?
     @State private var restored: PortableAccountBackup?
     @State private var exportDocument: BackupDocument?
+    @State private var mergePreview: PortableBackupMergeService.Preview?
+    @State private var confirmingMerge = false
+    @State private var mergeStatus: String?
+
+    private var merger: PortableBackupMergeService { PortableBackupMergeService(http: cloud.http) }
 
     private var service: PortableAccountBackupService { PortableAccountBackupService(http: cloud.http) }
 
@@ -25,9 +30,13 @@ struct PortableAccountBackupView: View {
                         prepareExport(backup)
                     }
                 }
-                Button(label("选择 Web v2 备份", "Select a Web v2 backup")) { picking = true }
+                Button(label("选择 Web v2 备份", "Select a Web v2 backup")) {
+                    clearMerge()
+                    picking = true
+                }
                 if let pending {
                     Button(label("导入并替换已保存的备份", "Import and replace saved backup")) {
+                        clearMerge()
                         run { generation in
                             let importer = service
                             _ = try await importer.restore(pending)
@@ -41,6 +50,7 @@ struct PortableAccountBackupView: View {
                     }
                 }
                 Button(label("读取已导入备份", "Open imported backup")) {
+                    clearMerge()
                     run { generation in
                         let backup = try await service.read(live: false)
                         guard generation == cloud.sessionGeneration else { return }
@@ -89,10 +99,47 @@ struct PortableAccountBackupView: View {
                     }
                 }
             }
+            if let restored, restored.account != nil, pending == nil {
+                Section {
+                    Button(label("预览合并差异（不写入）", "Preview merge (no writes)")) {
+                        previewMerge(restored)
+                    }
+                    if let mergePreview {
+                        mergeBreakdown(mergePreview)
+                        if mergePreview.counts.hasInserts {
+                            Button(label("查看合并确认", "Review merge confirmation")) {
+                                confirmingMerge = true
+                            }
+                        } else {
+                            Text(label("没有可安全新增的记录。", "Nothing can be safely added."))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text(label("合并到在线私有聊天", "Merge into live private chats"))
+                } footer: {
+                    Text(label("仅合并当前账号的符合条件的私有记录。共享聊天及浏览器本地记录不回灌。同 ID 冲突保留线上记录，不修改成员或权限。",
+                               "Only eligible private records for this account are merged. Shared chats and browser-local records are excluded. Live records win on conflict; membership and permissions are unchanged."))
+                }
+                .disabled(busy)
+            }
+            if let mergeStatus { Text(mergeStatus).foregroundStyle(.secondary) }
             if let error { Text(error).foregroundStyle(.red) }
         }
         .navigationTitle(label("跨端账号备份", "Portable account backup"))
+        .confirmationDialog(label("确认合并到在线私有聊天？", "Merge into live private chats?"),
+                            isPresented: $confirmingMerge, titleVisibility: .visible,
+                            presenting: mergePreview) { plan in
+            Button(label("确认并仅新增", "Confirm and add missing records")) {
+                commitMerge(plan)
+            }
+            Button(label("取消", "Cancel"), role: .cancel) {}
+        } message: { plan in
+            Text(label("新增：会话 \(plan.counts.conversations.insert)、消息 \(plan.counts.messages.insert)、附件 \(plan.counts.attachments.insert)。不会覆盖任何在线记录。",
+                       "Adds \(plan.counts.conversations.insert) chats, \(plan.counts.messages.insert) messages, and \(plan.counts.attachments.insert) attachments. No live records are overwritten."))
+        }
         .onChange(of: cloud.sessionGeneration) { _, _ in
+            clearMerge()
             pending = nil
             restored = nil
             exportDocument = nil
@@ -100,6 +147,7 @@ struct PortableAccountBackupView: View {
             error = nil
         }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.json]) { result in
+            clearMerge()
             pending = nil
             do {
                 let url = try result.get()
@@ -135,6 +183,101 @@ struct PortableAccountBackupView: View {
         }
     }
 
+    @ViewBuilder private func mergeBreakdown(_ plan: PortableBackupMergeService.Preview) -> some View {
+        mergeCount(label("会话", "Chats"), counts: plan.counts.conversations,
+                   conflictIDs: plan.conflicts?.conversations)
+        mergeCount(label("消息", "Messages"), counts: plan.counts.messages,
+                   conflictIDs: plan.conflicts?.messages)
+        mergeCount(label("附件", "Attachments"), counts: plan.counts.attachments,
+                   conflictIDs: plan.conflicts?.attachments)
+    }
+
+    @ViewBuilder private func mergeCount(_ title: String, counts: PortableBackupMergeService.Counts.Group,
+                                        conflictIDs: [String]?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(label("新增 \(counts.insert) · 跳过 \(counts.skip) · 冲突 \(counts.conflict)",
+                       "Add \(counts.insert) · Skip \(counts.skip) · Conflicts \(counts.conflict)"))
+                .font(.footnote)
+            if let conflictIDs, !conflictIDs.isEmpty {
+                Text(conflictIDs.joined(separator: ", "))
+                    .font(.caption2.monospaced())
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private func clearMerge() {
+        mergePreview = nil
+        confirmingMerge = false
+        mergeStatus = nil
+    }
+
+    private func previewMerge(_ backup: PortableAccountBackup) {
+        clearMerge()
+        run { generation in
+            let client = merger
+            guard let archiveID = backup.account?.accountId,
+                  let activeID = await cloud.auth.currentAccountId(),
+                  let archiveUUID = UUID(uuidString: archiveID),
+                  archiveUUID == UUID(uuidString: activeID),
+                  generation == cloud.sessionGeneration else {
+                self.error = label("仅可预览当前账号的备份。", "Only the current account's backup can be previewed.")
+                return
+            }
+            do {
+                let plan = try await client.preview(for: backup)
+                guard generation == cloud.sessionGeneration else { return }
+                mergePreview = plan
+            } catch PortableBackupMergeService.MergeError.archiveChanged {
+                guard generation == cloud.sessionGeneration else { return }
+                self.error = label("已保存备份已变化，请重新打开后预览。", "The saved backup changed. Open it again to preview.")
+            } catch {
+                guard generation == cloud.sessionGeneration else { return }
+                self.error = label("无法预览。未发起在线合并。", "Preview failed. No live merge was requested.")
+            }
+        }
+    }
+
+    /// Only the confirmation dialog action calls this method. Consume the
+    /// preview before the network request so a failed response cannot replay it.
+    private func commitMerge(_ shown: PortableBackupMergeService.Preview) {
+        guard !busy, let plan = mergePreview, plan.previewToken == shown.previewToken,
+              let backup = restored, backup.sha256 == shown.archiveSha256,
+              let account = backup.account, plan.counts.hasInserts else { return }
+        let archivedIDs = Set(account.conversations.map(\.id))
+        clearMerge()
+        run { generation in
+            let client = merger
+            let receipt: PortableBackupMergeService.Receipt
+            do {
+                receipt = try await client.commit(plan, confirmed: true)
+            } catch PortableBackupMergeService.MergeError.stalePreview {
+                guard generation == cloud.sessionGeneration else { return }
+                self.error = label("归档或在线记录已变化。请重新预览，不能沿用旧确认。",
+                                   "The backup or live records changed. Refresh the preview before confirming again.")
+                return
+            } catch {
+                guard generation == cloud.sessionGeneration else { return }
+                self.error = label("无法确认合并结果。请先重新预览，不会自动重试。",
+                                   "The merge result is unconfirmed. Preview again first; nothing will retry automatically.")
+                return
+            }
+            guard generation == cloud.sessionGeneration else { return }
+            mergeStatus = label("私有聊天合并已确认。", "Private-chat merge confirmed.")
+            do {
+                guard Set(receipt.affectedConversationIds).isSubset(of: archivedIDs) else {
+                    throw URLError(.cannotParseResponse)
+                }
+                try await cloud.refreshAfterPortableMerge(receipt, generation: generation)
+            } catch {
+                guard generation == cloud.sessionGeneration else { return }
+                mergeStatus = label("云端合并已确认。本机尚未同步，打开对应会话可从云端读取。",
+                                    "Cloud merge confirmed. Local refresh failed; open the affected chat to read from the server.")
+            }
+        }
+    }
+
     private func prepareExport(_ backup: PortableAccountBackup) {
         exportDocument = BackupDocument(data: backup.document)
         exporting = true
@@ -142,6 +285,7 @@ struct PortableAccountBackupView: View {
 
     private func run(_ work: @escaping @MainActor (UUID) async throws -> Void) {
         let generation = cloud.sessionGeneration
+        guard !busy else { return }
         busy = true
         error = nil
         Task {

@@ -11,6 +11,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.6] - 2026-11-27
+
+### Added
+- Preview and explicitly merge eligible same-account archived messages into private cloud chats. Live rows win on conflicts; imported backups and pending local outbox entries are unchanged. Web merge-capable backend required.
+
+---
+
 ## [0.11.5] - 2026-11-27
 
 ### Added

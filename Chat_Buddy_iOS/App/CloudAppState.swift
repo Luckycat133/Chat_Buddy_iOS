@@ -456,6 +456,23 @@ public final class CloudAppState: ObservableObject {
         return cleared
     }
 
+    /// Archive writes deliberately don't emit message-send events. Read only
+    /// authoritative affected timelines, bound to the old account's lifetime.
+    func refreshAfterPortableMerge(_ receipt: PortableBackupMergeService.Receipt, generation: UUID) async throws {
+        let current = scope
+        guard generation == sessionGeneration, current.accountId != nil,
+              accountDeletion != .submitting else { throw CancellationError() }
+        try current.lifetime.check()
+        guard let actorId = await auth.currentActorId() else { throw CancellationError() }
+        try current.lifetime.check()
+        try await current.conversations.refreshArchiveMerge(
+            conversationIds: receipt.affectedConversationIds,
+            starts: receipt.affectedConversationStarts,
+            myActorId: actorId,
+        )
+        try current.lifetime.check()
+    }
+
     public func runInitialSync() async {
         let current = scope
         guard let accountId = current.accountId, current.lifetime.isActive,

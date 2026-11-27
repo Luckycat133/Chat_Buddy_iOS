@@ -90,13 +90,54 @@ public actor ConversationRepository {
         }
     }
 
-    public func listMessages(conversationId: String, cursor: Int? = nil) async throws -> [RemoteMessageDTO] {
+    public func listMessages(conversationId: String, cursor: Int? = nil, limit: Int = 50) async throws -> [RemoteMessageDTO] {
         struct Response: Codable, Sendable { let items: [RemoteMessageDTO] }
         let response = try await http.get(
-            Endpoints.messages(conversationId: conversationId, cursor: cursor, limit: 50),
+            Endpoints.messages(conversationId: conversationId, cursor: cursor, limit: limit),
             as: Response.self,
         )
         return response.items
+    }
+
+    /// The merge route has already committed. Refresh only its declared
+    /// timelines via the authoritative read endpoint; don't send or queue.
+    func refreshArchiveMerge(conversationIds: [String], starts: [String: Int], myActorId: String) async throws {
+        try lifetime?.check()
+        let summaries = try await listConversations()
+        let limit = 200
+        for id in conversationIds {
+            guard let firstSequence = starts[id] else { throw URLError(.cannotParseResponse) }
+            var cursor = firstSequence
+            var finished = false
+            // The server writes at most 2,000 archived messages per request.
+            // Bound refresh work even while new messages are arriving.
+            for _ in 0..<50 {
+                try lifetime?.check()
+                let page = try await listMessages(conversationId: id, cursor: cursor, limit: limit)
+                guard page.count <= limit,
+                      page.allSatisfy({ $0.conversationId == id && $0.sequence >= cursor }) else {
+                    throw URLError(.cannotParseResponse)
+                }
+                let summary = summaries.first { $0.id == id }
+                try await MainActor.run {
+                    try self.lifetime?.check()
+                    try EventApplier.cacheArchiveMergeRows(
+                        conversationId: id, summary: summary, messages: page,
+                        myActorId: myActorId, in: self.context,
+                    )
+                }
+                if page.count < limit {
+                    finished = true
+                    break
+                }
+                guard let maxSequence = page.map(\.sequence).max(), maxSequence < Int.max else {
+                    throw URLError(.cannotParseResponse)
+                }
+                // Server reads sequence >= cursor, sorted ascending.
+                cursor = maxSequence + 1
+            }
+            guard finished else { throw URLError(.cannotParseResponse) }
+        }
     }
 
     // MARK: Cache-first reads (offline rendering)
