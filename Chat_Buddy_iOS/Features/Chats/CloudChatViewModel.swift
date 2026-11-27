@@ -17,6 +17,8 @@ public final class CloudChatViewModel: ObservableObject {
     @Published public var draft: String = ""
     @Published public private(set) var error: String?
     @Published public private(set) var conversationTitle: String = ""
+    @Published public private(set) var nextRestoreCursor: Int?
+    @Published public private(set) var loadingRestorePage = false
 
     public let conversationId: String
     private let initialMessageCursor: Int?
@@ -61,26 +63,73 @@ public final class CloudChatViewModel: ObservableObject {
     public func load() async {
         guard let app = app else { return }
         let conversations = app.conversations
+        if let initialMessageCursor {
+            await loadRestorePage(cursor: initialMessageCursor, replace: true)
+            return
+        }
         accountId = await app.auth.currentAccountId()
         guard self.app != nil else { return }
         do {
             serverMessages = try await conversations.listMessages(
-                conversationId: conversationId, cursor: initialMessageCursor, limit: messagePageSize,
+                conversationId: conversationId,
             )
             error = nil
         } catch {
             // Fall back to the cache so the timeline still renders offline.
-            let cached = await conversations.cachedMessages(conversationId: conversationId)
-            serverMessages = initialMessageCursor.map { start in
-                Array(cached.filter { $0.sequence >= start }.prefix(messagePageSize))
-            } ?? cached
+            serverMessages = await conversations.cachedMessages(conversationId: conversationId)
             self.error = String(describing: error)
         }
-        if !isReadOnlyRestoreWindow { await refreshOutboxSnapshots() }
+        await refreshOutboxSnapshots()
         rebuildRows()
-        if !isReadOnlyRestoreWindow, let actorId = await app.auth.currentActorId(), self.app != nil {
+        if let actorId = await app.auth.currentActorId(), self.app != nil {
             await conversations.markReadLocally(conversationId: conversationId, myActorId: actorId)
         }
+    }
+
+    public func loadNextRestorePage() async {
+        guard let cursor = nextRestoreCursor else { return }
+        await loadRestorePage(cursor: cursor, replace: false)
+    }
+
+    private func loadRestorePage(cursor: Int, replace: Bool) async {
+        guard let app, !loadingRestorePage else { return }
+        loadingRestorePage = true
+        defer { loadingRestorePage = false }
+        do {
+            let page = try await app.conversations.listMessages(
+                conversationId: conversationId, cursor: cursor, limit: messagePageSize,
+            )
+            guard self.app != nil, !Task.isCancelled else { return }
+            let next = try Self.restorePageCursor(
+                page, conversationId: conversationId, start: cursor, limit: messagePageSize,
+            )
+            if replace {
+                serverMessages = page
+            } else {
+                var known = Set(serverMessages.map(\.id))
+                serverMessages.append(contentsOf: page.filter { known.insert($0.id).inserted })
+            }
+            nextRestoreCursor = next
+            error = nil
+            rebuildRows()
+        } catch {
+            guard self.app != nil, !Task.isCancelled else { return }
+            if replace { nextRestoreCursor = cursor }
+            error = String(describing: error)
+        }
+    }
+
+    static func restorePageCursor(_ page: [RemoteMessageDTO], conversationId: String,
+                                  start: Int, limit: Int) throws -> Int? {
+        guard page.count <= limit,
+              page.allSatisfy({ $0.conversationId == conversationId && $0.sequence >= start }) else {
+            throw URLError(.cannotParseResponse)
+        }
+        guard page.count == limit else { return nil }
+        guard let last = page.map(\.sequence).max(), last < Int.max else {
+            throw URLError(.cannotParseResponse)
+        }
+        return last + 1
     }
 
     /// Pull outbox rows for this conversation into pure snapshots.
@@ -95,7 +144,13 @@ public final class CloudChatViewModel: ObservableObject {
 
     private func rebuildRows() {
         guard app != nil else { return }
-        rows = ChatOutboxReducer.merge(server: serverMessages, outbox: outboxSnapshots)
+        if isReadOnlyRestoreWindow {
+            rows = serverMessages.filter { $0.deletedAt == nil }
+                .sorted { $0.sequence < $1.sequence }
+                .map(ChatRowModel.fromServer)
+        } else {
+            rows = ChatOutboxReducer.merge(server: serverMessages, outbox: outboxSnapshots)
+        }
         if conversationTitle.isEmpty {
             conversationTitle = app?.cachedConversationTitle(conversationId: conversationId)
                 ?? NSLocalizedString("cloud_chat_title_fallback", comment: "")

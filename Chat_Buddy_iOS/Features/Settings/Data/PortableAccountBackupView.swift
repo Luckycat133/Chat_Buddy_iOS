@@ -139,7 +139,7 @@ struct PortableAccountBackupView: View {
                     }
                 } footer: {
                     if !mergedWindows.isEmpty {
-                        Text(label("从新增位置查看最多 200 条在线消息，此处只读。请从聊天列表打开普通聊天以发送消息。", "View up to 200 live messages from the restored position. This view is read-only; open the chat from the chat list to send messages."))
+                        Text(label("从新增位置分页查看在线消息，此处只读。请从聊天列表打开普通聊天以发送消息。", "Page through live messages from the restored position. This view is read-only; open the chat from the chat list to send messages."))
                     }
                 }
             }

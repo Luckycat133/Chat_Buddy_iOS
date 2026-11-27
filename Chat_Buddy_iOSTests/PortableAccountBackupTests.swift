@@ -233,6 +233,59 @@ final class PortableAccountBackupTests: XCTestCase {
         XCTAssertEqual(cached.map(\.sequence), Array(37..<239))
     }
 
+    func testReadOnlyTimelineRetriesFailedNextPageWithoutDiscardingRows() async throws {
+        let id = "11111111-1111-4111-8111-111111111111"
+        func page(_ sequences: Range<Int>) throws -> Data {
+            let items: [[String: Any]] = sequences.map { sequence in
+                ["id": "display-fixture-\(sequence)", "conversationId": id, "senderActorId": "fixture-actor",
+                 "sequence": sequence, "clientIdempotencyKey": "fixture-\(sequence)", "kind": "text",
+                 "content": "Synthetic \(sequence)", "status": "accepted",
+                 "createdAt": "2026-11-27T13:00:00.000Z"]
+            }
+            return try mergeJSON(["items": items])
+        }
+        let script = OutboxHTTPStub.Script([
+            .response(200, try page(37..<237)), .response(403, Data()),
+            .response(200, try page(237..<241)),
+        ])
+        let (_, url, session) = try await makeMergeService(script)
+        defer { OutboxHTTPStub.remove(url); session.invalidateAndCancel() }
+        let environment = AppEnvironment(
+            apiBaseURL: url, realtimeURL: url, bundleIdentifier: "restore-display-fixture", buildNumber: "1",
+            enableDiagnostics: false, apnsEnvironment: .sandbox,
+        )
+        let auth = AuthSession(environment: environment, service: "restore-display-fixture.\(UUID().uuidString)")
+        await auth.update(tokens: AuthTokens(accessToken: "fixture-only", refreshToken: "fixture-refresh",
+                                             accountId: "fixture-account", actorId: "fixture-actor",
+                                             accessExpiresAt: Date().addingTimeInterval(600)))
+        let device = try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema)
+        let cloud = try CloudAppState(
+            environment: environment, auth: auth, deviceContainer: device, urlSession: session,
+            enablePush: false, enableRealtime: false,
+            makeAccountContainer: { _ in try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema) },
+        )
+        let model = CloudChatViewModel(conversationId: id, app: cloud, initialMessageCursor: 37)
+        await model.load()
+        XCTAssertEqual(model.nextRestoreCursor, 237)
+        let firstPage = model.rows.map(\.id)
+        XCTAssertEqual(firstPage.count, 200)
+        await model.loadNextRestorePage()
+        XCTAssertEqual(model.rows.map(\.id), firstPage)
+        XCTAssertEqual(model.nextRestoreCursor, 237)
+        XCTAssertNotNil(model.error)
+        await model.loadNextRestorePage()
+        XCTAssertNil(model.nextRestoreCursor)
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.rows.count, 204)
+        XCTAssertEqual(model.rows.last?.id, "display-fixture-240")
+        XCTAssertEqual(script.requests.map(\.method), ["GET", "GET", "GET"])
+        for (request, expected) in zip(script.requests, [37, 237, 237]) {
+            var query = URLComponents()
+            query.query = request.query
+            XCTAssertTrue(query.queryItems?.contains(URLQueryItem(name: "cursor", value: String(expected))) == true)
+        }
+    }
+
     private func mergeJSON(_ payload: [String: Any]) throws -> Data {
         try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     }

@@ -55,11 +55,17 @@ public struct CloudChatView: View {
                         }
                         .id(row.id)
                     }
+                    if viewModel.nextRestoreCursor != nil {
+                        Button(loc.resolvedLanguage == .zh ? "加载更多消息" : "Load more messages") {
+                            Task { await viewModel.loadNextRestorePage() }
+                        }
+                        .disabled(viewModel.loadingRestorePage)
+                    }
                 }
                 .padding()
             }
             .onChange(of: viewModel.rows.last?.id) { _, newID in
-                guard let newID else { return }
+                guard !viewModel.isReadOnlyRestoreWindow, let newID else { return }
                 withAnimation { proxy.scrollTo(newID, anchor: .bottom) }
             }
         }
