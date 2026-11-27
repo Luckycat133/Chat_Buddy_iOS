@@ -233,6 +233,7 @@ final class OutboxHTTPStub: URLProtocol, @unchecked Sendable {
     struct CapturedRequest: Sendable {
         let method: String?
         let path: String?
+        let query: String?
         let contentType: String?
         let idempotencyKey: String?
         let authorization: String?
@@ -310,7 +311,7 @@ final class OutboxHTTPStub: URLProtocol, @unchecked Sendable {
                 throw URLError(.unsupportedURL)
             }
             let captured = CapturedRequest(
-                method: request.httpMethod, path: url.path,
+                method: request.httpMethod, path: url.path, query: url.query,
                 contentType: request.value(forHTTPHeaderField: "Content-Type"),
                 idempotencyKey: request.value(forHTTPHeaderField: "Idempotency-Key"),
                 authorization: request.value(forHTTPHeaderField: "Authorization"),

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import CryptoKit
 import XCTest
 @testable import Chat_Buddy_iOS
@@ -98,10 +99,7 @@ final class PortableAccountBackupTests: XCTestCase {
         let uploaded = try XCTUnwrap(JSONSerialization.jsonObject(with: script.requests[0].body) as? [String: String])
         XCTAssertEqual(Data(try XCTUnwrap(uploaded["document"]).utf8), bytes)
     }
-}
 
-@MainActor
-extension PortableAccountBackupTests {
     func testMergePreviewCannotWriteAndConfirmSendsOnlyReviewedToken() async throws {
         let bytes = try fixture()
         let backup = try PortableAccountBackup(document: bytes)
@@ -193,6 +191,46 @@ extension PortableAccountBackupTests {
         XCTAssertEqual(script.requests.map(\.path), ["/v1/account/backup/merge/preview", "/v1/account/backup/merge/preview",
                                                       "/v1/account/backup/merge/commit", "/v1/account/backup/merge/preview",
                                                       "/v1/account/backup/merge/commit"])
+    }
+
+    func testRefreshUsesAuthoritativeStartAndPaginatesWithoutPosting() async throws {
+        let id = "11111111-1111-4111-8111-111111111111"
+        let date = "2026-11-27T13:00:00.000Z"
+        func page(_ sequences: Range<Int>) throws -> Data {
+            let items: [[String: Any]] = sequences.map { sequence in
+                ["id": "cache-fixture-\(sequence)", "conversationId": id, "senderActorId": "fixture-actor",
+                 "sequence": sequence, "clientIdempotencyKey": "fixture-\(sequence)", "kind": "text",
+                 "content": "Synthetic", "status": "accepted", "createdAt": date]
+            }
+            return try mergeJSON(["items": items])
+        }
+        let script = OutboxHTTPStub.Script([
+            .response(200, try mergeJSON(["items": [["id": id, "type": "direct", "createdAt": date,
+                                                    "lastReadSequence": 10]]])),
+            .response(200, try page(37..<237)),
+            .response(200, try page(237..<239)),
+        ])
+        let (service, url, session) = try await makeMergeService(script)
+        defer { OutboxHTTPStub.remove(url); session.invalidateAndCancel() }
+        let container = try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema)
+        let context = ModelContext(container)
+        let repository = ConversationRepository(
+            http: service.http, context: context, outbox: OutboxStore(context: context),
+            accountIdProvider: { "fixture-account" },
+        )
+        try await repository.refreshArchiveMerge(conversationIds: [id], starts: [id: 37], myActorId: "fixture-actor")
+        XCTAssertEqual(script.requests.map(\.method), ["GET", "GET", "GET"])
+        XCTAssertEqual(script.requests.map(\.path), ["/v1/conversations", "/v1/conversations/\(id)/messages",
+                                                      "/v1/conversations/\(id)/messages"])
+        for (request, expected) in zip(script.requests.dropFirst(), [37, 237]) {
+            var query = URLComponents()
+            query.query = request.query
+            let params = query.queryItems ?? []
+            XCTAssertTrue(params.contains(URLQueryItem(name: "cursor", value: String(expected))))
+            XCTAssertTrue(params.contains(URLQueryItem(name: "limit", value: "200")))
+        }
+        let cached = await repository.cachedMessages(conversationId: id)
+        XCTAssertEqual(cached.map(\.sequence), Array(37..<239))
     }
 
     private func mergeJSON(_ payload: [String: Any]) throws -> Data {

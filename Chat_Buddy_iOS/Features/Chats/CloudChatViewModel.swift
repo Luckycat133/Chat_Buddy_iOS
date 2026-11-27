@@ -19,6 +19,8 @@ public final class CloudChatViewModel: ObservableObject {
     @Published public private(set) var conversationTitle: String = ""
 
     public let conversationId: String
+    private let initialMessageCursor: Int?
+    private var messagePageSize: Int { initialMessageCursor == nil ? 50 : 200 }
     private weak var boundApp: CloudAppState?
     private var generation: UUID?
     private var app: CloudAppState? {
@@ -36,8 +38,9 @@ public final class CloudChatViewModel: ObservableObject {
     /// deinit, so releasing it off the main actor frees the instance twice.
     nonisolated deinit {}
 
-    public init(conversationId: String, app: CloudAppState? = nil) {
+    public init(conversationId: String, app: CloudAppState? = nil, initialMessageCursor: Int? = nil) {
         self.conversationId = conversationId
+        self.initialMessageCursor = initialMessageCursor
         if let app { bind(app: app) }
     }
 
@@ -61,14 +64,15 @@ public final class CloudChatViewModel: ObservableObject {
         guard self.app != nil else { return }
         do {
             serverMessages = try await conversations.listMessages(
-                conversationId: conversationId,
+                conversationId: conversationId, cursor: initialMessageCursor, limit: messagePageSize,
             )
             error = nil
         } catch {
             // Fall back to the cache so the timeline still renders offline.
-            serverMessages = await conversations.cachedMessages(
-                conversationId: conversationId,
-            )
+            let cached = await conversations.cachedMessages(conversationId: conversationId)
+            serverMessages = initialMessageCursor.map { start in
+                Array(cached.filter { $0.sequence >= start }.prefix(messagePageSize))
+            } ?? cached
             self.error = String(describing: error)
         }
         await refreshOutboxSnapshots()
@@ -155,7 +159,7 @@ public final class CloudChatViewModel: ObservableObject {
         do {
             serverMessages = ChatOutboxReducer.reconciled(
                 server: try await app.conversations.listMessages(
-                    conversationId: conversationId,
+                    conversationId: conversationId, cursor: initialMessageCursor, limit: messagePageSize,
                 ),
             )
             error = nil

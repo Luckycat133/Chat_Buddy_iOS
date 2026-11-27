@@ -16,10 +16,11 @@ public struct CloudChatView: View {
 
     public let conversationId: String
 
-    public init(conversationId: String) {
+    public init(conversationId: String, initialMessageCursor: Int? = nil) {
         self.conversationId = conversationId
         _viewModel = StateObject(
-            wrappedValue: CloudChatViewModel(conversationId: conversationId, app: nil),
+            wrappedValue: CloudChatViewModel(conversationId: conversationId, app: nil,
+                                              initialMessageCursor: initialMessageCursor),
         )
     }
 

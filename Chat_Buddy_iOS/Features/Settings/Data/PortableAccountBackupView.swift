@@ -15,6 +15,7 @@ struct PortableAccountBackupView: View {
     @State private var mergePreview: PortableBackupMergeService.Preview?
     @State private var confirmingMerge = false
     @State private var mergeStatus: String?
+    @State private var mergedWindows: [String: Int] = [:]
 
     private var merger: PortableBackupMergeService { PortableBackupMergeService(http: cloud.http) }
 
@@ -123,7 +124,25 @@ struct PortableAccountBackupView: View {
                 }
                 .disabled(busy)
             }
-            if let mergeStatus { Text(mergeStatus).foregroundStyle(.secondary) }
+            if let mergeStatus {
+                Section {
+                    Text(mergeStatus).foregroundStyle(.secondary)
+                    ForEach(mergedWindows.keys.sorted(), id: \.self) { id in
+                        if let start = mergedWindows[id] {
+                            NavigationLink {
+                                CloudChatView(conversationId: id, initialMessageCursor: start)
+                            } label: {
+                                let name = restored?.account?.conversations.first(where: { $0.id == id })?.publicName
+                                Text(name ?? label("查看已恢复消息", "View restored messages"))
+                            }
+                        }
+                    }
+                } footer: {
+                    if !mergedWindows.isEmpty {
+                        Text(label("从新增位置打开在线聊天首屏。", "Open the first live page at the restored position."))
+                    }
+                }
+            }
             if let error { Text(error).foregroundStyle(.red) }
         }
         .navigationTitle(label("跨端账号备份", "Portable account backup"))
@@ -211,6 +230,7 @@ struct PortableAccountBackupView: View {
         mergePreview = nil
         confirmingMerge = false
         mergeStatus = nil
+        mergedWindows = [:]
     }
 
     private func previewMerge(_ backup: PortableAccountBackup) {
@@ -222,6 +242,7 @@ struct PortableAccountBackupView: View {
                   let archiveUUID = UUID(uuidString: archiveID),
                   archiveUUID == UUID(uuidString: activeID),
                   generation == cloud.sessionGeneration else {
+                guard generation == cloud.sessionGeneration else { return }
                 self.error = label("仅可预览当前账号的备份。", "Only the current account's backup can be previewed.")
                 return
             }
@@ -245,7 +266,7 @@ struct PortableAccountBackupView: View {
         guard !busy, let plan = mergePreview, plan.previewToken == shown.previewToken,
               let backup = restored, backup.sha256 == shown.archiveSha256,
               let account = backup.account, plan.counts.hasInserts else { return }
-        let archivedIDs = Set(account.conversations.map(\.id))
+        let archivedIDs = Set(account.conversations.compactMap { UUID(uuidString: $0.id) })
         clearMerge()
         run { generation in
             let client = merger
@@ -266,9 +287,11 @@ struct PortableAccountBackupView: View {
             guard generation == cloud.sessionGeneration else { return }
             mergeStatus = label("私有聊天合并已确认。", "Private-chat merge confirmed.")
             do {
-                guard Set(receipt.affectedConversationIds).isSubset(of: archivedIDs) else {
+                guard Set(receipt.affectedConversationIds.compactMap { UUID(uuidString: $0) })
+                    .isSubset(of: archivedIDs) else {
                     throw URLError(.cannotParseResponse)
                 }
+                mergedWindows = receipt.affectedConversationStarts
                 try await cloud.refreshAfterPortableMerge(receipt, generation: generation)
             } catch {
                 guard generation == cloud.sessionGeneration else { return }
