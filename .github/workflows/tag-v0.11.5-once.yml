@@ -1,0 +1,31 @@
+name: Create Chat_Buddy_iOS v0.11.5 tag once
+on:
+  push:
+    branches: ['dots/tag-v0.11.5-once']
+    paths: ['.github/workflows/tag-v0.11.5-once.yml']
+permissions:
+  contents: write
+jobs:
+  exact-tag:
+    if: github.repository == 'Luckycat133/Chat_Buddy_iOS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Create precise tag without overwriting
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: 'v0.11.5'
+          TARGET: 'bd8c907842a4cf8abe27c8a512c7fe03b661dca9'
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "Luckycat133/Chat_Buddy_iOS"
+          test "$GITHUB_REF" = "refs/heads/dots/tag-v0.11.5-once"
+          test "$TAG" = "v0.11.5"
+          [[ "$TARGET" =~ ^[a-f0-9]{40}$ ]]
+          current="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          test "$current" = "$TARGET"
+          version="$(gh api "repos/$GITHUB_REPOSITORY/contents/Chat_Buddy_iOS.xcodeproj/project.pbxproj?ref=$TARGET" --jq .content | base64 --decode | sed -nE "s/^[[:space:]]*MARKETING_VERSION = ([0-9.]+);$/\1/p" | sort -u)"
+          test "v$version" = "$TAG"
+          created="$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$TARGET" --jq .object.sha)"
+          test "$created" = "$TARGET"
