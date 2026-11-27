@@ -43,11 +43,19 @@ import Foundation
         )
     }
 
+    func exportPortablePreferences() throws -> Data {
+        try JSONEncoder().encode(PortablePreferences(localization: localization, theme: themeManager))
+    }
+
     /// Imports a backup blob, applying it to all wired managers and reloading stores.
     /// Returns the number of items restored.
     @discardableResult
     func importBackup(from data: Data) throws -> Int {
-        try DataImporter.importBackup(
+        if let portable = try PortablePreferences.decodeIfPresent(data) {
+            portable.apply(localization: localization, theme: themeManager)
+            return 5
+        }
+        return try DataImporter.importBackup(
             from: data,
             configStore: configStore,
             localization: localization,
