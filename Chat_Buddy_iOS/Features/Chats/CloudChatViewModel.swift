@@ -115,7 +115,7 @@ public final class CloudChatViewModel: ObservableObject {
         } catch {
             guard self.app != nil, !Task.isCancelled else { return }
             if replace { nextRestoreCursor = cursor }
-            error = String(describing: error)
+            self.error = String(describing: error)
         }
     }
 
