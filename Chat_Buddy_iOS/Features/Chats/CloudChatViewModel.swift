@@ -17,8 +17,13 @@ public final class CloudChatViewModel: ObservableObject {
     @Published public var draft: String = ""
     @Published public private(set) var error: String?
     @Published public private(set) var conversationTitle: String = ""
+    @Published public private(set) var nextRestoreCursor: Int?
+    @Published public private(set) var loadingRestorePage = false
 
     public let conversationId: String
+    private let initialMessageCursor: Int?
+    public var isReadOnlyRestoreWindow: Bool { initialMessageCursor != nil }
+    private var messagePageSize: Int { initialMessageCursor == nil ? 50 : 200 }
     private weak var boundApp: CloudAppState?
     private var generation: UUID?
     private var app: CloudAppState? {
@@ -36,8 +41,9 @@ public final class CloudChatViewModel: ObservableObject {
     /// deinit, so releasing it off the main actor frees the instance twice.
     nonisolated deinit {}
 
-    public init(conversationId: String, app: CloudAppState? = nil) {
+    public init(conversationId: String, app: CloudAppState? = nil, initialMessageCursor: Int? = nil) {
         self.conversationId = conversationId
+        self.initialMessageCursor = initialMessageCursor
         if let app { bind(app: app) }
     }
 
@@ -49,7 +55,7 @@ public final class CloudChatViewModel: ObservableObject {
     }
 
     public var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !isReadOnlyRestoreWindow && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: Load
@@ -57,6 +63,10 @@ public final class CloudChatViewModel: ObservableObject {
     public func load() async {
         guard let app = app else { return }
         let conversations = app.conversations
+        if let initialMessageCursor {
+            await loadRestorePage(cursor: initialMessageCursor, replace: true)
+            return
+        }
         accountId = await app.auth.currentAccountId()
         guard self.app != nil else { return }
         do {
@@ -66,9 +76,7 @@ public final class CloudChatViewModel: ObservableObject {
             error = nil
         } catch {
             // Fall back to the cache so the timeline still renders offline.
-            serverMessages = await conversations.cachedMessages(
-                conversationId: conversationId,
-            )
+            serverMessages = await conversations.cachedMessages(conversationId: conversationId)
             self.error = String(describing: error)
         }
         await refreshOutboxSnapshots()
@@ -76,6 +84,52 @@ public final class CloudChatViewModel: ObservableObject {
         if let actorId = await app.auth.currentActorId(), self.app != nil {
             await conversations.markReadLocally(conversationId: conversationId, myActorId: actorId)
         }
+    }
+
+    public func loadNextRestorePage() async {
+        guard let cursor = nextRestoreCursor else { return }
+        await loadRestorePage(cursor: cursor, replace: false)
+    }
+
+    private func loadRestorePage(cursor: Int, replace: Bool) async {
+        guard let app, !loadingRestorePage else { return }
+        loadingRestorePage = true
+        defer { loadingRestorePage = false }
+        do {
+            let page = try await app.conversations.listMessages(
+                conversationId: conversationId, cursor: cursor, limit: messagePageSize,
+            )
+            guard self.app != nil, !Task.isCancelled else { return }
+            let next = try Self.restorePageCursor(
+                page, conversationId: conversationId, start: cursor, limit: messagePageSize,
+            )
+            if replace {
+                serverMessages = page
+            } else {
+                var known = Set(serverMessages.map(\.id))
+                serverMessages.append(contentsOf: page.filter { known.insert($0.id).inserted })
+            }
+            nextRestoreCursor = next
+            error = nil
+            rebuildRows()
+        } catch {
+            guard self.app != nil, !Task.isCancelled else { return }
+            if replace { nextRestoreCursor = cursor }
+            self.error = String(describing: error)
+        }
+    }
+
+    static func restorePageCursor(_ page: [RemoteMessageDTO], conversationId: String,
+                                  start: Int, limit: Int) throws -> Int? {
+        guard page.count <= limit,
+              page.allSatisfy({ $0.conversationId == conversationId && $0.sequence >= start }) else {
+            throw URLError(.cannotParseResponse)
+        }
+        guard page.count == limit else { return nil }
+        guard let last = page.map(\.sequence).max(), last < Int.max else {
+            throw URLError(.cannotParseResponse)
+        }
+        return last + 1
     }
 
     /// Pull outbox rows for this conversation into pure snapshots.
@@ -90,7 +144,13 @@ public final class CloudChatViewModel: ObservableObject {
 
     private func rebuildRows() {
         guard app != nil else { return }
-        rows = ChatOutboxReducer.merge(server: serverMessages, outbox: outboxSnapshots)
+        if isReadOnlyRestoreWindow {
+            rows = serverMessages.filter { $0.deletedAt == nil }
+                .sorted { $0.sequence < $1.sequence }
+                .map(ChatRowModel.fromServer)
+        } else {
+            rows = ChatOutboxReducer.merge(server: serverMessages, outbox: outboxSnapshots)
+        }
         if conversationTitle.isEmpty {
             conversationTitle = app?.cachedConversationTitle(conversationId: conversationId)
                 ?? NSLocalizedString("cloud_chat_title_fallback", comment: "")
@@ -100,7 +160,7 @@ public final class CloudChatViewModel: ObservableObject {
     // MARK: Send (optimistic, never locks)
 
     public func send() async {
-        guard let app = app else { return }
+        guard !isReadOnlyRestoreWindow, let app = app else { return }
         let conversations = app.conversations
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -137,7 +197,7 @@ public final class CloudChatViewModel: ObservableObject {
 
     /// Retry a failed optimistic row by idempotency key.
     public func retry(row: ChatRowModel) async {
-        guard let app, let key = row.idempotencyKey, row.isLocalOnly else { return }
+        guard !isReadOnlyRestoreWindow, let app, let key = row.idempotencyKey, row.isLocalOnly else { return }
         do {
             _ = try await app.conversations.flushOne(idempotencyKey: key)
             error = nil
@@ -151,7 +211,7 @@ public final class CloudChatViewModel: ObservableObject {
     /// Server reconcile: re-read the authoritative timeline. Optimistic
     /// rows vanish once the server acknowledges their idempotency keys.
     public func reconcile() async {
-        guard let app else { return }
+        guard !isReadOnlyRestoreWindow, let app else { return }
         do {
             serverMessages = ChatOutboxReducer.reconciled(
                 server: try await app.conversations.listMessages(
@@ -167,7 +227,7 @@ public final class CloudChatViewModel: ObservableObject {
     }
 
     public func flushOutbox() async throws {
-        guard let app = app else { return }
+        guard !isReadOnlyRestoreWindow, let app = app else { return }
         _ = try await app.conversations.flushOutbox()
         await refreshOutboxSnapshots()
         rebuildRows()

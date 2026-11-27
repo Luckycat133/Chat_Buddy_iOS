@@ -49,6 +49,19 @@ final class CloudFeatureTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testRestoredTimelineCannotCompose() async {
+        let regular = CloudChatViewModel(conversationId: "fixture")
+        let restored = CloudChatViewModel(conversationId: "fixture", initialMessageCursor: 37)
+        regular.draft = "synthetic"
+        restored.draft = "synthetic"
+        XCTAssertTrue(regular.canSend)
+        XCTAssertFalse(restored.canSend)
+        XCTAssertTrue(restored.isReadOnlyRestoreWindow)
+        await restored.send()
+        XCTAssertEqual(restored.draft, "synthetic")
+    }
+
     func testOptimisticRowDisappearsWhenServerConfirmsIdempotencyKey() {
         let server = [serverMessage(id: "m1", key: "k1", content: "hello")]
         let outbox = [outboxEntry(key: "k1", content: "hello", state: .accepted)]

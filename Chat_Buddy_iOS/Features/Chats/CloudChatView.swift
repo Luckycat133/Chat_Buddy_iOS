@@ -16,18 +16,21 @@ public struct CloudChatView: View {
 
     public let conversationId: String
 
-    public init(conversationId: String) {
+    public init(conversationId: String, initialMessageCursor: Int? = nil) {
         self.conversationId = conversationId
         _viewModel = StateObject(
-            wrappedValue: CloudChatViewModel(conversationId: conversationId, app: nil),
+            wrappedValue: CloudChatViewModel(conversationId: conversationId, app: nil,
+                                              initialMessageCursor: initialMessageCursor),
         )
     }
 
     public var body: some View {
         VStack(spacing: 0) {
             timeline
-            Divider()
-            composer
+            if !viewModel.isReadOnlyRestoreWindow {
+                Divider()
+                composer
+            }
         }
         .navigationTitle(viewModel.conversationTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -52,11 +55,17 @@ public struct CloudChatView: View {
                         }
                         .id(row.id)
                     }
+                    if viewModel.nextRestoreCursor != nil {
+                        Button(loc.resolvedLanguage == .zh ? "加载更多消息" : "Load more messages") {
+                            Task { await viewModel.loadNextRestorePage() }
+                        }
+                        .disabled(viewModel.loadingRestorePage)
+                    }
                 }
                 .padding()
             }
             .onChange(of: viewModel.rows.last?.id) { _, newID in
-                guard let newID else { return }
+                guard !viewModel.isReadOnlyRestoreWindow, let newID else { return }
                 withAnimation { proxy.scrollTo(newID, anchor: .bottom) }
             }
         }
