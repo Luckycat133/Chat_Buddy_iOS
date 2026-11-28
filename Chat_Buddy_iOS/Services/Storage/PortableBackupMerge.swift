@@ -43,6 +43,7 @@ struct PortableBackupMergeService {
         let affectedConversationIds: [String]
         let affectedConversationStarts: [String: Int]
         let restoredConversationIds: [String]?
+        let restoredAt: Date?
     }
 
     enum MergeError: Error, Equatable {
@@ -100,6 +101,7 @@ struct PortableBackupMergeService {
               let previewUUIDs = Self.checkedIDs(plan.restoredConversationIds),
               restoredUUIDs == previewUUIDs, restored.count == expectedRestore.count,
               restored.isSubset(of: affected),
+              (receipt.restoredAt != nil) == !restored.isEmpty,
               affectedUUIDs.count == affected.count,
               Set(receipt.affectedConversationStarts.keys) == affected,
               receipt.affectedConversationStarts.values.allSatisfy({ $0 >= 0 }) else {

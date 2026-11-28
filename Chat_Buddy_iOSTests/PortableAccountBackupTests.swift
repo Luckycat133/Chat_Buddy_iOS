@@ -305,7 +305,7 @@ final class PortableAccountBackupTests: XCTestCase {
         func receipt(_ restore: String) throws -> Data {
             try mergeJSON(["archiveSha256": backup.sha256, "counts": counts,
                            "affectedConversationIds": [restore], "affectedConversationStarts": [restore: 1],
-                           "restoredConversationIds": [restore]])
+                           "restoredConversationIds": [restore], "restoredAt": "2026-11-28T00:00:00.000Z"])
         }
         let script = OutboxHTTPStub.Script([
             .response(200, try preview([foreign])),
@@ -382,6 +382,8 @@ final class PortableAccountBackupTests: XCTestCase {
         let context = ModelContext(container)
         context.insert(CachedTombstone(table: "conversations", rowId: id, deletedAt: Date(timeIntervalSince1970: 20)))
         context.insert(CachedTombstone(table: "messages", rowId: another, deletedAt: Date(timeIntervalSince1970: 30)))
+        context.insert(CachedConversationMember(conversationId: id, actorId: "fixture-human", status: "active",
+            role: "member", invitedByActorId: nil, joinedAt: nil, leftAt: nil, lastReadSequence: 900))
         context.insert(CachedMessage(id: "obsolete-cache-only", conversationId: id,
             senderActorId: "fixture-human", sequence: 900, clientIdempotencyKey: "queued-key",
             kind: "text", content: "An obsolete cached row", structuredPayload: nil,
@@ -393,9 +395,15 @@ final class PortableAccountBackupTests: XCTestCase {
         try context.save()
         let repository = ConversationRepository(http: service.http, context: context,
             outbox: OutboxStore(context: context), accountIdProvider: { "fixture-account" })
+        let receipt = PortableBackupMergeService.Receipt(archiveSha256: "fixture",
+            counts: .init(conversations: .init(insert: 1, skip: 0, conflict: 0),
+                          messages: .init(insert: 201, skip: 0, conflict: 0),
+                          attachments: .init(insert: 0, skip: 0, conflict: 0)),
+            affectedConversationIds: [id], affectedConversationStarts: [id: 1],
+            restoredConversationIds: [id], restoredAt: Date(timeIntervalSince1970: 30))
+        try await repository.retainArchiveReadback(receipt)
         do {
-            try await repository.refreshArchiveMerge(conversationIds: [id], starts: [id: 1],
-                myActorId: "fixture-human", restoredConversationIds: [id])
+            try await repository.reconcileRetainedArchiveReadback(myActorId: "fixture-human")
             XCTFail("Incomplete authoritative reply paging must not reveal a rebuilt chat")
         } catch {}
         let firstVisibleList = await repository.cachedConversationList(myActorId: "fixture-human")
@@ -405,13 +413,14 @@ final class PortableAccountBackupTests: XCTestCase {
         XCTAssertEqual(try context.fetch(FetchDescriptor<CachedMessage>()).map(\.id), ["obsolete-cache-only"])
         XCTAssertEqual(Set(try context.fetch(FetchDescriptor<CachedTombstone>()).map(\.rowId)), Set([id, another]))
 
-        for _ in 0..<2 {
-            try await repository.refreshArchiveMerge(conversationIds: [id], starts: [id: 1],
-                myActorId: "fixture-human", restoredConversationIds: [id])
-        }
+        try await repository.reconcileRetainedArchiveReadback(myActorId: "fixture-human")
+        try await repository.retainArchiveReadback(receipt)
+        try await repository.reconcileRetainedArchiveReadback(myActorId: "fixture-human")
         let visible = await repository.cachedConversationList(myActorId: "fixture-human")
         XCTAssertEqual(visible.map(\.id), [id])
         XCTAssertEqual(visible.first?.publicName, "Rebuilt fixture")
+        XCTAssertEqual(visible.first?.unreadCount, 2)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<CachedConversationMember>()).first?.lastReadSequence, 199)
         let rows = await repository.cachedMessages(conversationId: id)
         XCTAssertEqual(rows.count, 201)
         XCTAssertEqual(rows.suffix(3).map(\.senderActorId), ["fixture-human", "fixture-assistant", "fixture-system"])
@@ -475,8 +484,10 @@ final class PortableAccountBackupTests: XCTestCase {
             "messages": ["insert": 0, "skip": 0, "conflict": 0],
             "attachments": ["insert": 0, "skip": 0, "conflict": 0],
         ], "affectedConversationIds": [id], "affectedConversationStarts": [id: 1],
-            "restoredConversationIds": [id]])
-        let receipt = try JSONDecoder().decode(PortableBackupMergeService.Receipt.self, from: body)
+            "restoredConversationIds": [id], "restoredAt": "1970-01-01T00:00:30.000Z"])
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601WithFractional
+        let receipt = try decoder.decode(PortableBackupMergeService.Receipt.self, from: body)
         let script = OutboxHTTPStub.Script([
             .response(200, summary), .response(403, Data()),
             .response(200, summary), .response(200, try mergeJSON(["items": []])),
@@ -493,9 +504,8 @@ final class PortableAccountBackupTests: XCTestCase {
                 outbox: OutboxStore(context: context), accountIdProvider: { accountId }), context)
         }
         do {
-            let (first, context) = try repository("account-A")
-            context.insert(CachedTombstone(table: "conversations", rowId: id, deletedAt: .distantPast))
-            try context.save()
+            let (first, _) = try repository("account-A")
+            // This device has not received the old server deletion yet.
             try await first.retainArchiveReadback(receipt)
             do {
                 try await first.reconcileRetainedArchiveReadback(myActorId: "fixture")
@@ -503,7 +513,8 @@ final class PortableAccountBackupTests: XCTestCase {
             } catch {}
             let readbacks = try await first.pendingArchiveReadback()
             XCTAssertEqual(readbacks.map(\.conversationId), [id])
-            XCTAssertEqual(readbacks.first?.observedDeletion, .distantPast)
+            XCTAssertNil(readbacks.first?.observedDeletion)
+            XCTAssertEqual(readbacks.first?.serverDeletionCutoff, Date(timeIntervalSince1970: 30))
         }
 
         let (otherAccount, _) = try repository("account-B")
@@ -519,6 +530,16 @@ final class PortableAccountBackupTests: XCTestCase {
         let restartedChats = await reopened.cachedConversationList(myActorId: "fixture")
         XCTAssertEqual(restartedChats.map(\.id), [id], "An empty rebuilt chat should still be visible")
         XCTAssertTrue(try EventApplier.deletedConversationIDs(in: context).isEmpty)
+        for stamp in [20.0, 30.0] {
+            let envelope = SyncCoordinator.ServerEnvelope(cursor: "fixture", upserts: [],
+                tombstones: [SyncTombstone(table: "conversations", id: id,
+                    deletedAt: Date(timeIntervalSince1970: stamp))],
+                serverTime: .distantPast, hasMore: false)
+            _ = try EventApplier.apply(envelope: envelope, in: context)
+            let listed = await reopened.cachedConversationList(myActorId: "fixture")
+            XCTAssertEqual(listed.map(\.id), stamp == 20 ? [id] : [],
+                "Late older deletion must not hide the restoration; equal timestamp fails closed")
+        }
         XCTAssertEqual(script.requests.map(\.method), ["GET", "GET", "GET", "GET"])
         for request in script.requests.filter({ $0.path == "/v1/conversations" }) {
             var query = URLComponents()

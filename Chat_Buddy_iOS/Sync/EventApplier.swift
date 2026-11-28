@@ -102,7 +102,7 @@ public enum EventApplier {
             let retired = try findTombstone(table: archiveReplayKey(rowId), rowId: rowId, in: context)
             // A delayed delta can include the same old deletion after the
             // archive readback proved that row active again.
-            if let retired, deletedAt <= retired.deletedAt { return }
+            if let retired, deletedAt < retired.deletedAt { return }
             if let existingTomb, deletedAt < existingTomb.deletedAt { return }
         }
         var hasPendingMutation = false
@@ -515,12 +515,20 @@ public enum EventApplier {
         myActorId: String,
         in context: ModelContext,
         restoration: ArchiveRestoreFence? = nil,
+        serverDeletionCutoff: Date? = nil,
         completedReadback: CachedDeviceSetting? = nil,
     ) throws {
         let tombstone = try findTombstone(table: "conversations", rowId: conversationId, in: context)
         if let restoration {
             guard let summary, summary.id == conversationId, summary.type == "direct",
-                  tombstone?.deletedAt == restoration.observedDeletion else {
+                  let cursor = summary.lastReadSequence, cursor >= 0 else {
+                throw URLError(.cannotParseResponse)
+            }
+            if let serverDeletionCutoff {
+                if let deletion = tombstone?.deletedAt, deletion >= serverDeletionCutoff {
+                    throw URLError(.cannotParseResponse)
+                }
+            } else if tombstone?.deletedAt != restoration.observedDeletion {
                 throw URLError(.cannotParseResponse)
             }
             for dto in messages {
@@ -545,16 +553,21 @@ public enum EventApplier {
                 createdByActorId: "", status: "active", createdAt: summary.lastActivityAt ?? Date(),
             ), in: context)
         }
-        // Use only an explicitly returned server cursor and never replace an
-        // existing local member, which may have a more recent read cursor.
-        if let summary, summary.id == conversationId,
-           let readThrough = summary.lastReadSequence ?? (restoration == nil ? nil : 0),
-           try fetchMember(conversationId: conversationId, actorId: myActorId, in: context) == nil {
-            try applyConversationMember(RemoteConversationMemberDTO(
-                id: nil, conversationId: conversationId, actorId: myActorId, status: "active",
-                role: "member", invitedByActorId: nil, joinedAt: nil, leftAt: nil,
-                lastReadSequence: readThrough,
-            ), in: context)
+        // A rebuilt thread has a new authoritative read cursor. For an
+        // additive merge in an existing chat, leave the local member alone.
+        if let summary, summary.id == conversationId, let readThrough = summary.lastReadSequence {
+            if let member = try fetchMember(conversationId: conversationId, actorId: myActorId, in: context) {
+                if restoration != nil {
+                    member.lastReadSequence = readThrough
+                    member.status = "active"
+                }
+            } else {
+                try applyConversationMember(RemoteConversationMemberDTO(
+                    id: nil, conversationId: conversationId, actorId: myActorId, status: "active",
+                    role: "member", invitedByActorId: nil, joinedAt: nil, leftAt: nil,
+                    lastReadSequence: readThrough,
+                ), in: context)
+            }
         }
         for dto in messages where dto.conversationId == conversationId && dto.deletedAt == nil {
             if try hasTombstone(table: "messages", rowId: dto.id, in: context) { continue }
@@ -565,9 +578,10 @@ public enum EventApplier {
             }
             try upsertMessage(dto, id: dto.id, in: context)
         }
-        if restoration != nil, let tombstone {
+        if restoration != nil, let past = serverDeletionCutoff ?? tombstone?.deletedAt {
             let key = archiveReplayKey(conversationId)
-            let past = tombstone.deletedAt
+            // The server-authorized cutoff also fences a delayed older
+            // deletion not yet synced to this device at readback time.
             if let replayFence = try findTombstone(table: key, rowId: conversationId, in: context) {
                 replayFence.deletedAt = max(replayFence.deletedAt, past)
             } else {

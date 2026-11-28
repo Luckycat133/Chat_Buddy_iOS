@@ -110,6 +110,7 @@ public actor ConversationRepository {
         let start: Int
         let rebuilt: Bool
         let observedDeletion: Date?
+        let serverDeletionCutoff: Date?
         let id: UUID
     }
 
@@ -132,8 +133,11 @@ public actor ConversationRepository {
                 let observedDeletion = rebuilt
                     ? try EventApplier.conversationDeletedAt(id, in: self.context)
                     : prior?.observedDeletion
+                let cutoff = rebuilt ? receipt.restoredAt : prior?.serverDeletionCutoff
+                guard !rebuilt || cutoff != nil else { throw URLError(.cannotParseResponse) }
                 let window = ArchiveReadback(conversationId: id, start: min(start, prior?.start ?? start),
-                    rebuilt: rebuilt || prior?.rebuilt == true, observedDeletion: observedDeletion, id: UUID())
+                    rebuilt: rebuilt || prior?.rebuilt == true, observedDeletion: observedDeletion,
+                    serverDeletionCutoff: cutoff, id: UUID())
                 let value = String(decoding: try JSONEncoder().encode(window), as: UTF8.self)
                 if let saved {
                     saved.value = value
@@ -194,8 +198,12 @@ public actor ConversationRepository {
             try self.lifetime?.check()
             return try restored.reduce(into: [String: EventApplier.ArchiveRestoreFence]()) { result, id in
                 let fence = try EventApplier.archiveRestoreFence(conversationId: id, in: self.context)
-                if let retainedWindow, retainedWindow.observedDeletion != fence.observedDeletion {
-                    throw URLError(.cannotParseResponse)
+                if let retainedWindow {
+                    if let cutoff = retainedWindow.serverDeletionCutoff {
+                        if let active = fence.observedDeletion, active >= cutoff { throw URLError(.cannotParseResponse) }
+                    } else if retainedWindow.observedDeletion != fence.observedDeletion {
+                        throw URLError(.cannotParseResponse)
+                    }
                 }
                 result[id] = fence
             }
@@ -263,7 +271,8 @@ public actor ConversationRepository {
                 }
                 try EventApplier.cacheArchiveMergeRows(
                     conversationId: id, summary: summary, messages: checkedRows,
-                    myActorId: myActorId, in: self.context, restoration: fence, completedReadback: retainedRow,
+                    myActorId: myActorId, in: self.context, restoration: fence,
+                    serverDeletionCutoff: retainedWindow?.serverDeletionCutoff, completedReadback: retainedRow,
                 )
             }
         }
