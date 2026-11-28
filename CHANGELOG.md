@@ -13,7 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.11.7] - 2026-11-28
 
-- Preview rebuilding same-account server-retained private chats and reconcile restored author IDs and reply links from read-only server pages. Unsupported chats remain unchanged; a failed read or a newer tombstone is not cleared.
+- Preview rebuilding same-account server-retained private chats and reconcile restored author IDs and reply links from read-only server pages. Unsupported chats remain unchanged; a failed read or a newer tombstone is not cleared. Failed or interrupted readback can be retried after restarting, without re-submitting the confirmation.
 
 ---
 

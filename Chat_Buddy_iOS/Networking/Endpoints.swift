@@ -159,8 +159,10 @@ public enum Endpoints {
     public static let accountImport = APIEndpoint(path: "/v1/account/import")
     static let portableAccountBackup = APIEndpoint(path: "/v1/account/backup")
     static let portableLiveAccountBackup = APIEndpoint(path: "/v1/account/backup/live")
-    static let portableBackupMergePreview = APIEndpoint(path: "/v1/account/backup/merge/preview")
-    static let portableBackupMergeCommit = APIEndpoint(path: "/v1/account/backup/merge/commit")
+    // Legacy Web ignores the opt-in and still provides its additive-only
+    // contract. New Web exposes recovery details only to opted-in clients.
+    static let portableBackupMergePreview = APIEndpoint(path: "/v1/account/backup/merge/preview", query: ["rebuild": "1"])
+    static let portableBackupMergeCommit = APIEndpoint(path: "/v1/account/backup/merge/commit", query: ["rebuild": "1"])
 
     // MARK: Memory
 

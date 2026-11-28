@@ -142,6 +142,11 @@ final class PortableAccountBackupTests: XCTestCase {
         XCTAssertEqual(script.requests.map(\.path), ["/v1/account/backup/merge/preview", "/v1/account/backup/merge/commit",
                                                       "/v1/account/backup/merge/preview"])
         XCTAssertEqual(script.requests.map(\.method), ["POST", "POST", "POST"])
+        for request in script.requests {
+            var query = URLComponents()
+            query.query = request.query
+            XCTAssertEqual(query.queryItems, [URLQueryItem(name: "rebuild", value: "1")])
+        }
         XCTAssertEqual(script.requests.map(\.authorization), Array(repeating: "Bearer backup-fixture-token", count: 3))
         let previewBody = try XCTUnwrap(JSONSerialization.jsonObject(with: script.requests[0].body) as? [String: Any])
         let commitBody = try XCTUnwrap(JSONSerialization.jsonObject(with: script.requests[1].body) as? [String: Any])
