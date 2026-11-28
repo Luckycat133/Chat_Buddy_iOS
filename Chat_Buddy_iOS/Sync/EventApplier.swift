@@ -95,6 +95,16 @@ public enum EventApplier {
         in context: ModelContext,
         pendingIdempotencyKeys: Set<String>,
     ) throws {
+        // These are local storage namespaces, not server tombstone tables.
+        guard !table.hasPrefix("conversations|"), !table.hasPrefix("archive-restored-conversations|") else { return }
+        let existingTomb = try findTombstone(table: table, rowId: rowId, in: context)
+        if table == "conversations" {
+            let retired = try findTombstone(table: archiveReplayKey(rowId), rowId: rowId, in: context)
+            // A delayed delta can include the same old deletion after the
+            // archive readback proved that row active again.
+            if let retired, deletedAt <= retired.deletedAt { return }
+            if let existingTomb, deletedAt < existingTomb.deletedAt { return }
+        }
         var hasPendingMutation = false
         if table == "messages" {
             // Protect optimistic sends whose row is still pending in the
@@ -113,15 +123,10 @@ public enum EventApplier {
         // Record the tombstone either way: it proves we observed the
         // server's deletion and prevents a stale upsert from resurrecting
         // the row on a later replayed envelope.
-        let existingTomb = try context.fetch(
-            FetchDescriptor<CachedTombstone>(predicate: #Predicate {
-                $0.table == table && $0.rowId == rowId
-            })
-        ).first
         if let existingTomb {
             existingTomb.deletedAt = deletedAt
         } else {
-            context.insert(CachedTombstone(table: table, rowId: rowId, deletedAt: deletedAt))
+            context.insert(CachedTombstone(table: activeTombstoneKey(table, rowId), rowId: rowId, deletedAt: deletedAt))
         }
     }
 
@@ -478,11 +483,26 @@ public enum EventApplier {
 
     struct ArchiveRestoreFence: Sendable {
         let observedDeletion: Date?
+        let preexistingMessageIDs: Set<String>
     }
 
     static func archiveRestoreFence(conversationId: String, in context: ModelContext) throws -> ArchiveRestoreFence {
-        let timestamp = try findTombstone(table: "conversations", rowId: conversationId, in: context)?.deletedAt
-        return ArchiveRestoreFence(observedDeletion: timestamp)
+        let prior = try cachedMessages(conversationId: conversationId, in: context)
+        return ArchiveRestoreFence(observedDeletion: try conversationDeletedAt(conversationId, in: context),
+                                   preexistingMessageIDs: Set(prior.map(\.id)))
+    }
+
+    static func conversationDeletedAt(_ id: String, in context: ModelContext) throws -> Date? {
+        try findTombstone(table: "conversations", rowId: id, in: context)?.deletedAt
+    }
+
+    static func deletedConversationIDs(in context: ModelContext) throws -> Set<String> {
+        let rows = try context.fetch(FetchDescriptor<CachedTombstone>())
+        return Set(rows.filter { $0.table == "conversations" || $0.table == activeTombstoneKey("conversations", $0.rowId) }.map(\.rowId))
+    }
+
+    private static func cachedMessages(conversationId: String, in context: ModelContext) throws -> [CachedMessage] {
+        try context.fetch(FetchDescriptor<CachedMessage>(predicate: #Predicate { $0.conversationId == conversationId }))
     }
 
     /// A receipt-authorized rebuild can retire only the precise old conversation
@@ -501,6 +521,18 @@ public enum EventApplier {
             guard let summary, summary.id == conversationId, summary.type == "direct",
                   tombstone?.deletedAt == restoration.observedDeletion else {
                 throw URLError(.cannotParseResponse)
+            }
+            for dto in messages {
+                if let existing = try fetchMessage(id: dto.id, in: context), existing.conversationId != conversationId {
+                    throw URLError(.cannotParseResponse)
+                }
+            }
+            let activeIDs = Set(messages.filter { $0.deletedAt == nil }.map(\.id))
+            // The archive flow does not mutate the outbox. An obsolete cache
+            // row must not shadow its still-pending outbox counterpart.
+            for row in try cachedMessages(conversationId: conversationId, in: context)
+                where restoration.preexistingMessageIDs.contains(row.id) && !activeIDs.contains(row.id) {
+                context.delete(row)
             }
         } else if tombstone != nil {
             return
@@ -524,10 +556,25 @@ public enum EventApplier {
         }
         for dto in messages where dto.conversationId == conversationId && dto.deletedAt == nil {
             if try hasTombstone(table: "messages", rowId: dto.id, in: context) { continue }
-            if try fetchMessage(id: dto.id, in: context) != nil { continue }
+            if let present = try fetchMessage(id: dto.id, in: context) {
+                guard restoration?.preexistingMessageIDs.contains(present.id) == true,
+                      present.deletedAt == nil,
+                      present.editedAt.map({ $0 <= (dto.editedAt ?? .distantPast) }) ?? true else { continue }
+            }
             try upsertMessage(dto, id: dto.id, in: context)
         }
-        if restoration != nil, let tombstone { context.delete(tombstone) }
+        if restoration != nil, let tombstone {
+            let key = archiveReplayKey(conversationId)
+            let past = tombstone.deletedAt
+            if let replayFence = try findTombstone(table: key, rowId: conversationId, in: context) {
+                replayFence.deletedAt = max(replayFence.deletedAt, past)
+            } else {
+                context.insert(CachedTombstone(table: key, rowId: conversationId, deletedAt: past))
+            }
+            for oldDeletion in try matchingTombstones(table: "conversations", rowId: conversationId, in: context) {
+                context.delete(oldDeletion)
+            }
+        }
         try context.save()
     }
 
@@ -536,11 +583,26 @@ public enum EventApplier {
     }
 
     private static func findTombstone(table: String, rowId: String, in context: ModelContext) throws -> CachedTombstone? {
-        try context.fetch(
+        try matchingTombstones(table: table, rowId: rowId, in: context).max { $0.deletedAt < $1.deletedAt }
+    }
+
+    private static func matchingTombstones(table: String, rowId: String, in context: ModelContext) throws -> [CachedTombstone] {
+        let scopedKey = activeTombstoneKey(table, rowId)
+        return try context.fetch(
             FetchDescriptor<CachedTombstone>(predicate: #Predicate {
-                $0.table == table && $0.rowId == rowId
+                ($0.table == table || $0.table == scopedKey) && $0.rowId == rowId
             }),
-        ).first
+        )
+    }
+
+    // The legacy model uniquely indexes table, not (table,id). Scope new
+    // conversation keys without changing its storage schema; still read old keys.
+    private static func activeTombstoneKey(_ table: String, _ rowId: String) -> String {
+        table == "conversations" ? "conversations|" + rowId : table
+    }
+
+    private static func archiveReplayKey(_ conversationId: String) -> String {
+        "archive-restored-conversations|" + conversationId
     }
 
     // MARK: - Fetch helpers

@@ -165,12 +165,7 @@ public actor ConversationRepository {
     public func cachedConversationList(myActorId: String? = nil) async -> [ConversationListItem] {
         await MainActor.run { () -> [ConversationListItem] in
             guard self.lifetime?.isActive != false else { return [] }
-            let tombstones = (try? self.context.fetch(
-                FetchDescriptor<CachedTombstone>(
-                    predicate: #Predicate { $0.table == "conversations" },
-                ),
-            ))?.map(\.rowId) ?? []
-            let tombstoneSet = Set(tombstones)
+            guard let tombstoneSet = try? EventApplier.deletedConversationIDs(in: self.context) else { return [] }
             let conversations = (try? self.context.fetch(
                 FetchDescriptor<CachedConversation>(
                     sortBy: [SortDescriptor(\.createdAt, order: .reverse)],
@@ -223,8 +218,9 @@ public actor ConversationRepository {
             guard self.lifetime?.isActive != false else { return [] }
             // A deleted conversation may still have old message cache rows.
             // Do not use them as a fallback before an authorized rebuild.
-            guard let fence = try? EventApplier.archiveRestoreFence(conversationId: conversationId, in: self.context),
-                  fence.observedDeletion == nil else { return [] }
+            do {
+                guard try EventApplier.conversationDeletedAt(conversationId, in: self.context) == nil else { return [] }
+            } catch { return [] }
             let rows = (try? self.context.fetch(
                 FetchDescriptor<CachedMessage>(
                     predicate: #Predicate { $0.conversationId == conversationId },

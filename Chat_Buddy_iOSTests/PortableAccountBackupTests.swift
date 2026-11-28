@@ -377,6 +377,14 @@ final class PortableAccountBackupTests: XCTestCase {
         let context = ModelContext(container)
         context.insert(CachedTombstone(table: "conversations", rowId: id, deletedAt: Date(timeIntervalSince1970: 20)))
         context.insert(CachedTombstone(table: "messages", rowId: another, deletedAt: Date(timeIntervalSince1970: 30)))
+        context.insert(CachedMessage(id: "obsolete-cache-only", conversationId: id,
+            senderActorId: "fixture-human", sequence: 900, clientIdempotencyKey: "queued-key",
+            kind: "text", content: "An obsolete cached row", structuredPayload: nil,
+            replyToMessageId: nil, burstId: nil, status: "accepted", createdAt: .distantPast, deletedAt: nil))
+        context.insert(OutboxMutation(id: "queued-row", accountId: "fixture-account",
+            idempotencyKey: "queued-key", method: "POST", path: "/v1/conversations/\(id)/messages",
+            bodyData: Data(), state: "queued", attempts: 0, lastError: nil,
+            createdAt: .distantPast, updatedAt: .distantPast))
         try context.save()
         let repository = ConversationRepository(http: service.http, context: context,
             outbox: OutboxStore(context: context), accountIdProvider: { "fixture-account" })
@@ -387,7 +395,9 @@ final class PortableAccountBackupTests: XCTestCase {
         } catch {}
         let firstVisibleList = await repository.cachedConversationList(myActorId: "fixture-human")
         XCTAssertTrue(firstVisibleList.isEmpty)
-        XCTAssertTrue(try context.fetch(FetchDescriptor<CachedMessage>()).isEmpty)
+        let beforeRead = await repository.cachedMessages(conversationId: id)
+        XCTAssertTrue(beforeRead.isEmpty)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<CachedMessage>()).map(\.id), ["obsolete-cache-only"])
         XCTAssertEqual(Set(try context.fetch(FetchDescriptor<CachedTombstone>()).map(\.rowId)), Set([id, another]))
 
         for _ in 0..<2 {
@@ -402,8 +412,28 @@ final class PortableAccountBackupTests: XCTestCase {
         XCTAssertEqual(rows.suffix(3).map(\.senderActorId), ["fixture-human", "fixture-assistant", "fixture-system"])
         XCTAssertEqual(rows.suffix(2).map(\.replyToMessageId), ["thread-199", "thread-200"])
         XCTAssertEqual(rows.suffix(2).map(ChatRowModel.fromServer).map(\.replyToMessageId), ["thread-199", "thread-200"])
-        XCTAssertEqual(try context.fetch(FetchDescriptor<CachedTombstone>()).map(\.rowId), [another])
+        XCTAssertFalse(rows.contains { $0.id == "obsolete-cache-only" })
+        XCTAssertEqual(try context.fetch(FetchDescriptor<OutboxMutation>()).map(\.id), ["queued-row"])
+        XCTAssertEqual(try EventApplier.deletedConversationIDs(in: context), [])
+        XCTAssertTrue(try context.fetch(FetchDescriptor<CachedTombstone>()).contains { $0.rowId == another })
         XCTAssertEqual(script.requests.map(\.method), Array(repeating: "GET", count: 9))
+
+        func applyDeletions(_ events: [(String, TimeInterval)]) throws {
+            let envelope = SyncCoordinator.ServerEnvelope(cursor: "fixture-cursor", upserts: [],
+                tombstones: events.map { SyncTombstone(table: "conversations", id: $0.0,
+                    deletedAt: Date(timeIntervalSince1970: $0.1)) },
+                serverTime: .distantPast, hasMore: false)
+            _ = try EventApplier.apply(envelope: envelope, in: context)
+        }
+        try applyDeletions([(id, 20), (another, 25)])
+        XCTAssertEqual(try EventApplier.deletedConversationIDs(in: context), Set([another]))
+        let afterReplay = await repository.cachedMessages(conversationId: id)
+        XCTAssertEqual(afterReplay.count, 201)
+        try applyDeletions([(id, 40)])
+        XCTAssertEqual(try EventApplier.deletedConversationIDs(in: context), Set([id, another]))
+        let afterNewDeletion = await repository.cachedMessages(conversationId: id)
+        XCTAssertTrue(afterNewDeletion.isEmpty)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<OutboxMutation>()).map(\.id), ["queued-row"])
     }
 
     func testOnlyObservedConversationTombstoneCanBeCleared() throws {
