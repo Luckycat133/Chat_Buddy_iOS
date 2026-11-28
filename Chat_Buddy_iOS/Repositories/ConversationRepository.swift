@@ -66,6 +66,10 @@ public actor ConversationRepository {
     }
 
     public func listConversations() async throws -> [ConversationListItem] {
+        try await listConversations(endpoint: Endpoints.conversations)
+    }
+
+    private func listConversations(endpoint: APIEndpoint) async throws -> [ConversationListItem] {
         struct Response: Codable, Sendable { let items: [Item] }
         struct Item: Codable, Sendable {
             let id: String
@@ -76,7 +80,7 @@ public actor ConversationRepository {
             let lastMessagePreview: String?
             let createdAt: Date
         }
-        let response = try await http.get(Endpoints.conversations, as: Response.self)
+        let response = try await http.get(endpoint, as: Response.self)
         return response.items.map {
             ConversationListItem(
                 id: $0.id,
@@ -99,6 +103,81 @@ public actor ConversationRepository {
         return response.items
     }
 
+    /// Account-cache record of a confirmed server write. It contains no
+    /// archive body, preview token, credentials or message text.
+    struct ArchiveReadback: Codable, Sendable, Equatable {
+        let conversationId: String
+        let start: Int
+        let rebuilt: Bool
+        let observedDeletion: Date?
+        let id: UUID
+    }
+
+    private static let archiveReadbackPrefix = "cloud.archive-readback:"
+
+    func retainArchiveReadback(_ receipt: PortableBackupMergeService.Receipt) async throws {
+        guard await accountIdProvider() != nil else { throw CancellationError() }
+        let restored = Set(receipt.restoredConversationIds ?? [])
+        try await MainActor.run {
+            try self.lifetime?.check()
+            for id in receipt.affectedConversationIds {
+                guard let start = receipt.affectedConversationStarts[id], start >= 0,
+                      UUID(uuidString: id) != nil else { throw URLError(.cannotParseResponse) }
+                let key = Self.archiveReadbackPrefix + id
+                let saved = try self.context.fetch(FetchDescriptor<CachedDeviceSetting>(
+                    predicate: #Predicate { $0.key == key },
+                )).first
+                let prior = try saved.map { try JSONDecoder().decode(ArchiveReadback.self, from: Data($0.value.utf8)) }
+                let rebuilt = restored.contains(id)
+                let observedDeletion = rebuilt
+                    ? try EventApplier.conversationDeletedAt(id, in: self.context)
+                    : prior?.observedDeletion
+                let window = ArchiveReadback(conversationId: id, start: min(start, prior?.start ?? start),
+                    rebuilt: rebuilt || prior?.rebuilt == true, observedDeletion: observedDeletion, id: UUID())
+                let value = String(decoding: try JSONEncoder().encode(window), as: UTF8.self)
+                if let saved {
+                    saved.value = value
+                    saved.updatedAt = Date()
+                } else {
+                    self.context.insert(CachedDeviceSetting(key: key, value: value, updatedAt: Date()))
+                }
+            }
+            try self.context.save()
+        }
+    }
+
+    func pendingArchiveReadback() async throws -> [ArchiveReadback] {
+        guard await accountIdProvider() != nil else { throw CancellationError() }
+        return try await MainActor.run {
+            try self.lifetime?.check()
+            let rows = try self.context.fetch(FetchDescriptor<CachedDeviceSetting>())
+            return try rows.filter { $0.key.hasPrefix(Self.archiveReadbackPrefix) }.map { row in
+                let item = try JSONDecoder().decode(ArchiveReadback.self, from: Data(row.value.utf8))
+                guard UUID(uuidString: item.conversationId) != nil, item.start >= 0,
+                      Self.archiveReadbackPrefix + item.conversationId == row.key else {
+                    throw URLError(.cannotParseResponse)
+                }
+                return item
+            }.sorted { $0.conversationId < $1.conversationId }
+        }
+    }
+
+    func reconcileRetainedArchiveReadback(myActorId: String) async throws {
+        let pending = try await pendingArchiveReadback()
+        var firstError: (any Error)?
+        for window in pending {
+            do {
+                try await refreshArchiveMerge(conversationIds: [window.conversationId],
+                    starts: [window.conversationId: window.start], myActorId: myActorId,
+                    restoredConversationIds: window.rebuilt ? [window.conversationId] : [],
+                    retainedWindow: window)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
+    }
+
     /// The merge route has already committed. Refresh only its declared
     /// timelines via the authoritative read endpoint; don't send or queue.
     func refreshArchiveMerge(
@@ -106,6 +185,7 @@ public actor ConversationRepository {
         starts: [String: Int],
         myActorId: String,
         restoredConversationIds: [String] = [],
+        retainedWindow: ArchiveReadback? = nil,
     ) async throws {
         try lifetime?.check()
         let restored = Set(restoredConversationIds)
@@ -113,10 +193,28 @@ public actor ConversationRepository {
         let fences = try await MainActor.run {
             try self.lifetime?.check()
             return try restored.reduce(into: [String: EventApplier.ArchiveRestoreFence]()) { result, id in
-                result[id] = try EventApplier.archiveRestoreFence(conversationId: id, in: self.context)
+                let fence = try EventApplier.archiveRestoreFence(conversationId: id, in: self.context)
+                if let retainedWindow, retainedWindow.observedDeletion != fence.observedDeletion {
+                    throw URLError(.cannotParseResponse)
+                }
+                result[id] = fence
             }
         }
-        let summaries = try await listConversations()
+        var summaries: [ConversationListItem] = []
+        if restored.count < conversationIds.count {
+            summaries = try await listConversations()
+        }
+        if !restored.isEmpty {
+            guard restored.count <= 100, restored.allSatisfy({ UUID(uuidString: $0) != nil }) else {
+                throw URLError(.cannotParseResponse)
+            }
+            let rebuilt = try await listConversations(endpoint: Endpoints.conversations(archiveRecoveryIDs: Array(restored)))
+            guard Set(rebuilt.map(\.id)) == restored, rebuilt.count == restored.count else {
+                throw URLError(.cannotParseResponse)
+            }
+            summaries.removeAll { restored.contains($0.id) }
+            summaries.append(contentsOf: rebuilt)
+        }
         let limit = 200
         for id in conversationIds {
             guard let firstSequence = starts[id] else { throw URLError(.cannotParseResponse) }
@@ -150,9 +248,22 @@ public actor ConversationRepository {
             let checkedRows = rows
             try await MainActor.run {
                 try self.lifetime?.check()
+                let retainedRow: CachedDeviceSetting?
+                if let retainedWindow {
+                    let key = Self.archiveReadbackPrefix + id
+                    retainedRow = try self.context.fetch(FetchDescriptor<CachedDeviceSetting>(
+                        predicate: #Predicate { $0.key == key },
+                    )).first
+                    guard let retainedRow,
+                          try JSONDecoder().decode(ArchiveReadback.self, from: Data(retainedRow.value.utf8)) == retainedWindow else {
+                        throw CancellationError()
+                    }
+                } else {
+                    retainedRow = nil
+                }
                 try EventApplier.cacheArchiveMergeRows(
                     conversationId: id, summary: summary, messages: checkedRows,
-                    myActorId: myActorId, in: self.context, restoration: fence,
+                    myActorId: myActorId, in: self.context, restoration: fence, completedReadback: retainedRow,
                 )
             }
         }

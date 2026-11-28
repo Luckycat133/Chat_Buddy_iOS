@@ -515,6 +515,7 @@ public enum EventApplier {
         myActorId: String,
         in context: ModelContext,
         restoration: ArchiveRestoreFence? = nil,
+        completedReadback: CachedDeviceSetting? = nil,
     ) throws {
         let tombstone = try findTombstone(table: "conversations", rowId: conversationId, in: context)
         if let restoration {
@@ -535,6 +536,7 @@ public enum EventApplier {
                 context.delete(row)
             }
         } else if tombstone != nil {
+            if completedReadback != nil { throw URLError(.cannotParseResponse) }
             return
         }
         if let summary, summary.id == conversationId, try fetchConversation(id: conversationId, in: context) == nil {
@@ -575,6 +577,7 @@ public enum EventApplier {
                 context.delete(oldDeletion)
             }
         }
+        if let completedReadback { context.delete(completedReadback) }
         try context.save()
     }
 

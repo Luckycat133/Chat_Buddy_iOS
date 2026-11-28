@@ -17,6 +17,7 @@ struct PortableAccountBackupView: View {
     @State private var mergeStatus: String?
     @State private var mergedWindows: [String: Int] = [:]
     @State private var rebuiltChatIDs: Set<String> = []
+    @State private var pendingReadback = false
 
     private var merger: PortableBackupMergeService { PortableBackupMergeService(http: cloud.http) }
 
@@ -149,6 +150,17 @@ struct PortableAccountBackupView: View {
                     }
                 }
             }
+            if pendingReadback {
+                Section {
+                    Button(label("重试读取已确认的合并", "Retry reading the confirmed merge")) {
+                        retryReadback()
+                    }
+                    .disabled(busy)
+                } footer: {
+                    Text(label("仅重新读取服务端，不会再次提交合并。关闭应用后仍可重试。",
+                               "Only reads from the server again; it never commits the merge twice. Retry is available after restarting."))
+                }
+            }
             if let error { Text(error).foregroundStyle(.red) }
         }
         .navigationTitle(label("跨端账号备份", "Portable account backup"))
@@ -163,8 +175,12 @@ struct PortableAccountBackupView: View {
             Text(label("重建私有会话 \(plan.counts.conversations.insert) 个，恢复消息 \(plan.counts.messages.insert) 条、附件 \(plan.counts.attachments.insert) 件。不会覆盖任何在线记录。",
                        "Rebuilds \(plan.counts.conversations.insert) private chats and restores \(plan.counts.messages.insert) messages and \(plan.counts.attachments.insert) attachments. No live records are overwritten."))
         }
+        .task(id: cloud.sessionGeneration) {
+            await loadPendingReadback(generation: cloud.sessionGeneration)
+        }
         .onChange(of: cloud.sessionGeneration) { _, _ in
             clearMerge()
+            pendingReadback = false
             pending = nil
             restored = nil
             exportDocument = nil
@@ -327,9 +343,30 @@ struct PortableAccountBackupView: View {
                 try await cloud.refreshAfterPortableMerge(receipt, generation: generation)
             } catch {
                 guard generation == cloud.sessionGeneration else { return }
-                mergeStatus = label("云端合并已确认。本机尚未同步，打开对应会话可从云端读取。",
-                                    "Cloud merge confirmed. Local refresh failed; open the affected chat to read from the server.")
+                mergeStatus = label("云端合并已确认，本机尚未完全同步。",
+                                    "Cloud merge confirmed; the local refresh is incomplete.")
             }
+            await loadPendingReadback(generation: generation)
+        }
+    }
+
+    private func loadPendingReadback(generation: UUID) async {
+        let available = await cloud.hasPendingPortableMergeReadback(generation: generation)
+        if generation == cloud.sessionGeneration { pendingReadback = available }
+    }
+
+    private func retryReadback() {
+        run { generation in
+            do {
+                try await cloud.retryPortableMergeReadback(generation: generation)
+                guard generation == cloud.sessionGeneration else { return }
+                mergeStatus = label("已确认的合并已同步到本机。", "The confirmed merge is synced to this device.")
+            } catch {
+                guard generation == cloud.sessionGeneration else { return }
+                mergeStatus = label("仍未完全同步，请稍后重试。未再次提交合并。",
+                                    "Local refresh is still incomplete. Try again later; the merge was not resubmitted.")
+            }
+            await loadPendingReadback(generation: generation)
         }
     }
 

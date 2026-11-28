@@ -87,6 +87,9 @@ public enum Endpoints {
     // MARK: Conversations
 
     public static let conversations = APIEndpoint(path: "/v1/conversations")
+    static func conversations(archiveRecoveryIDs ids: [String]) -> APIEndpoint {
+        APIEndpoint(path: "/v1/conversations", query: ["ids": ids.sorted().joined(separator: ",")])
+    }
     public static func conversation(id: String) -> APIEndpoint {
         APIEndpoint(path: "/v1/conversations/\(id)")
     }

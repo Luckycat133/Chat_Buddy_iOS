@@ -461,6 +461,68 @@ final class PortableAccountBackupTests: XCTestCase {
         XCTAssertEqual(try context.fetch(FetchDescriptor<CachedTombstone>()).first?.deletedAt, date.addingTimeInterval(10))
     }
 
+    func testConfirmedReconciliationRetriesReadOnlyAfterAccountStoreReopen() async throws {
+        let id = "11111111-1111-4111-8111-111111111111"
+        let date = "2026-11-28T00:00:00.000Z"
+        let summary = try mergeJSON(["items": [["id": id, "type": "direct", "createdAt": date, "lastReadSequence": 0]]])
+        let body = try mergeJSON(["archiveSha256": "fixture", "counts": [
+            "conversations": ["insert": 1, "skip": 0, "conflict": 0],
+            "messages": ["insert": 0, "skip": 0, "conflict": 0],
+            "attachments": ["insert": 0, "skip": 0, "conflict": 0],
+        ], "affectedConversationIds": [id], "affectedConversationStarts": [id: 1],
+            "restoredConversationIds": [id]])
+        let receipt = try JSONDecoder().decode(PortableBackupMergeService.Receipt.self, from: body)
+        let script = OutboxHTTPStub.Script([
+            .response(200, summary), .response(403, Data()),
+            .response(200, summary), .response(200, try mergeJSON(["items": []])),
+        ])
+        let (service, url, session) = try await makeMergeService(script)
+        defer { OutboxHTTPStub.remove(url); session.invalidateAndCancel() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func repository(_ accountId: String) throws -> (ConversationRepository, ModelContext) {
+            let store = try ModelContainerFactory.makeAccountStore(namespace: "fixture", accountId: accountId,
+                                                                   storageRoot: root)
+            let context = ModelContext(store)
+            return (ConversationRepository(http: service.http, context: context,
+                outbox: OutboxStore(context: context), accountIdProvider: { accountId }), context)
+        }
+        do {
+            let (first, context) = try repository("account-A")
+            context.insert(CachedTombstone(table: "conversations", rowId: id, deletedAt: .distantPast))
+            try context.save()
+            try await first.retainArchiveReadback(receipt)
+            do {
+                try await first.reconcileRetainedArchiveReadback(myActorId: "fixture")
+                XCTFail("First reconciliation should fail")
+            } catch {}
+            let readbacks = try await first.pendingArchiveReadback()
+            XCTAssertEqual(readbacks.map(\.conversationId), [id])
+            XCTAssertEqual(readbacks.first?.observedDeletion, .distantPast)
+        }
+
+        let (otherAccount, _) = try repository("account-B")
+        let separate = try await otherAccount.pendingArchiveReadback()
+        XCTAssertTrue(separate.isEmpty)
+        let (reopened, context) = try repository("account-A")
+        let pending = try await reopened.pendingArchiveReadback()
+        XCTAssertEqual(pending.first?.conversationId, id)
+        try await reopened.reconcileRetainedArchiveReadback(myActorId: "fixture")
+
+        let remaining = try await reopened.pendingArchiveReadback()
+        XCTAssertTrue(remaining.isEmpty)
+        let restartedChats = await reopened.cachedConversationList(myActorId: "fixture")
+        XCTAssertEqual(restartedChats.map(\.id), [id], "An empty rebuilt chat should still be visible")
+        XCTAssertTrue(try EventApplier.deletedConversationIDs(in: context).isEmpty)
+        XCTAssertEqual(script.requests.map(\.method), ["GET", "GET", "GET", "GET"])
+        for request in script.requests.filter({ $0.path == "/v1/conversations" }) {
+            var query = URLComponents()
+            query.query = request.query
+            XCTAssertTrue(query.queryItems?.contains(URLQueryItem(name: "ids", value: id)) == true)
+        }
+        XCTAssertFalse(script.requests.contains { $0.path.contains("/merge/commit") })
+    }
+
     private func mergeJSON(_ payload: [String: Any]) throws -> Data {
         try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     }
