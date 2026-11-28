@@ -27,6 +27,7 @@ public struct ChatRowModel: Identifiable, Equatable, Sendable {
     public let isLocalOnly: Bool
     public let idempotencyKey: String?
     public let status: Status
+    public let replyToMessageId: String?
 
     public init(
         id: String,
@@ -38,6 +39,7 @@ public struct ChatRowModel: Identifiable, Equatable, Sendable {
         isLocalOnly: Bool,
         idempotencyKey: String?,
         status: Status,
+        replyToMessageId: String? = nil,
     ) {
         self.id = id
         self.conversationId = conversationId
@@ -48,6 +50,7 @@ public struct ChatRowModel: Identifiable, Equatable, Sendable {
         self.isLocalOnly = isLocalOnly
         self.idempotencyKey = idempotencyKey
         self.status = status
+        self.replyToMessageId = replyToMessageId
     }
 
     public static func fromServer(_ dto: RemoteMessageDTO) -> ChatRowModel {
@@ -61,6 +64,7 @@ public struct ChatRowModel: Identifiable, Equatable, Sendable {
             isLocalOnly: false,
             idempotencyKey: dto.clientIdempotencyKey,
             status: dto.status == "failed" ? .failed : .delivered,
+            replyToMessageId: dto.replyToMessageId,
         )
     }
 }

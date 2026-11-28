@@ -16,6 +16,8 @@ struct PortableAccountBackupView: View {
     @State private var confirmingMerge = false
     @State private var mergeStatus: String?
     @State private var mergedWindows: [String: Int] = [:]
+    @State private var rebuiltChatIDs: Set<String> = []
+    @State private var pendingReadback = false
 
     private var merger: PortableBackupMergeService { PortableBackupMergeService(http: cloud.http) }
 
@@ -106,7 +108,7 @@ struct PortableAccountBackupView: View {
                         previewMerge(restored)
                     }
                     if let mergePreview {
-                        mergeBreakdown(mergePreview)
+                        mergeBreakdown(mergePreview, archive: restored)
                         if mergePreview.counts.hasInserts {
                             Button(label("查看合并确认", "Review merge confirmation")) {
                                 confirmingMerge = true
@@ -133,7 +135,12 @@ struct PortableAccountBackupView: View {
                                 CloudChatView(conversationId: id, initialMessageCursor: start)
                             } label: {
                                 let name = restored?.account?.conversations.first(where: { $0.id == id })?.publicName
-                                Text(name ?? label("查看已恢复消息", "View restored messages"))
+                                if rebuiltChatIDs.contains(id) {
+                                    Label(name ?? label("查看重建会话", "View rebuilt chat"),
+                                          systemImage: "arrow.counterclockwise")
+                                } else {
+                                    Text(name ?? label("查看已恢复消息", "View restored messages"))
+                                }
                             }
                         }
                     }
@@ -141,6 +148,17 @@ struct PortableAccountBackupView: View {
                     if !mergedWindows.isEmpty {
                         Text(label("从新增位置分页查看在线消息，此处只读。请从聊天列表打开普通聊天以发送消息。", "Page through live messages from the restored position. This view is read-only; open the chat from the chat list to send messages."))
                     }
+                }
+            }
+            if pendingReadback {
+                Section {
+                    Button(label("重试读取已确认的合并", "Retry reading the confirmed merge")) {
+                        retryReadback()
+                    }
+                    .disabled(busy)
+                } footer: {
+                    Text(label("仅重新读取服务端，不会再次提交合并。关闭应用后仍可重试。",
+                               "Only reads from the server again; it never commits the merge twice. Retry is available after restarting."))
                 }
             }
             if let error { Text(error).foregroundStyle(.red) }
@@ -154,11 +172,15 @@ struct PortableAccountBackupView: View {
             }
             Button(label("取消", "Cancel"), role: .cancel) {}
         } message: { plan in
-            Text(label("新增：会话 \(plan.counts.conversations.insert)、消息 \(plan.counts.messages.insert)、附件 \(plan.counts.attachments.insert)。不会覆盖任何在线记录。",
-                       "Adds \(plan.counts.conversations.insert) chats, \(plan.counts.messages.insert) messages, and \(plan.counts.attachments.insert) attachments. No live records are overwritten."))
+            Text(label("重建私有会话 \(plan.counts.conversations.insert) 个，恢复消息 \(plan.counts.messages.insert) 条、附件 \(plan.counts.attachments.insert) 件。不会覆盖任何在线记录。",
+                       "Rebuilds \(plan.counts.conversations.insert) private chats and restores \(plan.counts.messages.insert) messages and \(plan.counts.attachments.insert) attachments. No live records are overwritten."))
+        }
+        .task(id: cloud.sessionGeneration) {
+            await loadPendingReadback(generation: cloud.sessionGeneration)
         }
         .onChange(of: cloud.sessionGeneration) { _, _ in
             clearMerge()
+            pendingReadback = false
             pending = nil
             restored = nil
             exportDocument = nil
@@ -202,13 +224,33 @@ struct PortableAccountBackupView: View {
         }
     }
 
-    @ViewBuilder private func mergeBreakdown(_ plan: PortableBackupMergeService.Preview) -> some View {
+    @ViewBuilder private func mergeBreakdown(_ plan: PortableBackupMergeService.Preview,
+                                             archive: PortableAccountBackup) -> some View {
+        if let ids = plan.restoredConversationIds, !ids.isEmpty {
+            mergeConversationNames(label("将重建的已删除私有会话", "Deleted private chats to rebuild"),
+                                   ids: ids, archive: archive)
+        }
+        if let ids = plan.unsupportedConversationIds, !ids.isEmpty {
+            mergeConversationNames(label("无法重建的会话（保持不变）", "Unavailable to rebuild (unchanged)"),
+                                   ids: ids, archive: archive)
+        }
         mergeCount(label("会话", "Chats"), counts: plan.counts.conversations,
                    conflictIDs: plan.conflicts?.conversations)
         mergeCount(label("消息", "Messages"), counts: plan.counts.messages,
                    conflictIDs: plan.conflicts?.messages)
         mergeCount(label("附件", "Attachments"), counts: plan.counts.attachments,
                    conflictIDs: plan.conflicts?.attachments)
+    }
+
+    private func mergeConversationNames(_ title: String, ids: [String], archive: PortableAccountBackup) -> some View {
+        let chats = archive.account?.conversations ?? []
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.subheadline.weight(.semibold))
+            ForEach(ids, id: \.self) { id in
+                let name = chats.first { UUID(uuidString: $0.id) == UUID(uuidString: id) }?.publicName
+                Text(name ?? id).font(.footnote)
+            }
+        }
     }
 
     @ViewBuilder private func mergeCount(_ title: String, counts: PortableBackupMergeService.Counts.Group,
@@ -231,6 +273,7 @@ struct PortableAccountBackupView: View {
         confirmingMerge = false
         mergeStatus = nil
         mergedWindows = [:]
+        rebuiltChatIDs = []
     }
 
     private func previewMerge(_ backup: PortableAccountBackup) {
@@ -285,19 +328,45 @@ struct PortableAccountBackupView: View {
                 return
             }
             guard generation == cloud.sessionGeneration else { return }
-            mergeStatus = label("私有聊天合并已确认。", "Private-chat merge confirmed.")
+            guard Set(receipt.affectedConversationIds.compactMap { UUID(uuidString: $0) })
+                .isSubset(of: archivedIDs) else {
+                self.error = label("无法核对回执范围，请重新预览。不会自动重试。",
+                                   "The receipt scope could not be verified. Preview again; nothing will retry automatically.")
+                return
+            }
+            mergedWindows = receipt.affectedConversationStarts
+            rebuiltChatIDs = Set(receipt.restoredConversationIds ?? [])
+            mergeStatus = rebuiltChatIDs.isEmpty
+                ? label("私有聊天合并已确认。", "Private-chat merge confirmed.")
+                : label("私有会话重建已确认。", "Private-chat rebuild confirmed.")
             do {
-                guard Set(receipt.affectedConversationIds.compactMap { UUID(uuidString: $0) })
-                    .isSubset(of: archivedIDs) else {
-                    throw URLError(.cannotParseResponse)
-                }
-                mergedWindows = receipt.affectedConversationStarts
                 try await cloud.refreshAfterPortableMerge(receipt, generation: generation)
             } catch {
                 guard generation == cloud.sessionGeneration else { return }
-                mergeStatus = label("云端合并已确认。本机尚未同步，打开对应会话可从云端读取。",
-                                    "Cloud merge confirmed. Local refresh failed; open the affected chat to read from the server.")
+                mergeStatus = label("云端合并已确认，本机尚未完全同步。",
+                                    "Cloud merge confirmed; the local refresh is incomplete.")
             }
+            await loadPendingReadback(generation: generation)
+        }
+    }
+
+    private func loadPendingReadback(generation: UUID) async {
+        let available = await cloud.hasPendingPortableMergeReadback(generation: generation)
+        if generation == cloud.sessionGeneration { pendingReadback = available }
+    }
+
+    private func retryReadback() {
+        run { generation in
+            do {
+                try await cloud.retryPortableMergeReadback(generation: generation)
+                guard generation == cloud.sessionGeneration else { return }
+                mergeStatus = label("已确认的合并已同步到本机。", "The confirmed merge is synced to this device.")
+            } catch {
+                guard generation == cloud.sessionGeneration else { return }
+                mergeStatus = label("仍未完全同步，请稍后重试。未再次提交合并。",
+                                    "Local refresh is still incomplete. Try again later; the merge was not resubmitted.")
+            }
+            await loadPendingReadback(generation: generation)
         }
     }
 

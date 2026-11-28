@@ -47,6 +47,7 @@ public final class CloudAppState: ObservableObject {
     @Published public var pendingDeepLink: DeepLinkRouter.PendingRoute?
     @Published public private(set) var accountDeletion: AccountDeletion = .idle
     @Published public private(set) var sessionGeneration = UUID()
+    @Published private(set) var archiveMergeRevision = UUID()
 
     public var container: ModelContainer { scope.container }
     public let auth: AuthSession
@@ -463,13 +464,28 @@ public final class CloudAppState: ObservableObject {
         guard generation == sessionGeneration, current.accountId != nil,
               accountDeletion != .submitting else { throw CancellationError() }
         try current.lifetime.check()
+        try await current.conversations.retainArchiveReadback(receipt)
+        try await retryPortableMergeReadback(generation: generation)
+    }
+
+    func hasPendingPortableMergeReadback(generation: UUID) async -> Bool {
+        let current = scope
+        guard generation == sessionGeneration, current.accountId != nil else { return false }
+        let pending = try? await current.conversations.pendingArchiveReadback()
+        return generation == sessionGeneration && current.lifetime.isActive && pending?.isEmpty == false
+    }
+
+    func retryPortableMergeReadback(generation: UUID) async throws {
+        let current = scope
+        guard generation == sessionGeneration, current.accountId != nil,
+              accountDeletion != .submitting else { throw CancellationError() }
+        try current.lifetime.check()
         guard let actorId = await auth.currentActorId() else { throw CancellationError() }
         try current.lifetime.check()
-        try await current.conversations.refreshArchiveMerge(
-            conversationIds: receipt.affectedConversationIds,
-            starts: receipt.affectedConversationStarts,
-            myActorId: actorId,
-        )
+        defer {
+            if generation == sessionGeneration, current.lifetime.isActive { archiveMergeRevision = UUID() }
+        }
+        try await current.conversations.reconcileRetainedArchiveReadback(myActorId: actorId)
         try current.lifetime.check()
     }
 

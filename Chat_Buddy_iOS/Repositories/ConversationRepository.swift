@@ -66,6 +66,10 @@ public actor ConversationRepository {
     }
 
     public func listConversations() async throws -> [ConversationListItem] {
+        try await listConversations(endpoint: Endpoints.conversations)
+    }
+
+    private func listConversations(endpoint: APIEndpoint) async throws -> [ConversationListItem] {
         struct Response: Codable, Sendable { let items: [Item] }
         struct Item: Codable, Sendable {
             let id: String
@@ -76,7 +80,7 @@ public actor ConversationRepository {
             let lastMessagePreview: String?
             let createdAt: Date
         }
-        let response = try await http.get(Endpoints.conversations, as: Response.self)
+        let response = try await http.get(endpoint, as: Response.self)
         return response.items.map {
             ConversationListItem(
                 id: $0.id,
@@ -99,44 +103,178 @@ public actor ConversationRepository {
         return response.items
     }
 
+    /// Account-cache record of a confirmed server write. It contains no
+    /// archive body, preview token, credentials or message text.
+    struct ArchiveReadback: Codable, Sendable, Equatable {
+        let conversationId: String
+        let start: Int
+        let rebuilt: Bool
+        let observedDeletion: Date?
+        let serverDeletionCutoff: Date?
+        let id: UUID
+    }
+
+    private static let archiveReadbackPrefix = "cloud.archive-readback:"
+
+    func retainArchiveReadback(_ receipt: PortableBackupMergeService.Receipt) async throws {
+        guard await accountIdProvider() != nil else { throw CancellationError() }
+        let restored = Set(receipt.restoredConversationIds ?? [])
+        try await MainActor.run {
+            try self.lifetime?.check()
+            for id in receipt.affectedConversationIds {
+                guard let start = receipt.affectedConversationStarts[id], start >= 0,
+                      UUID(uuidString: id) != nil else { throw URLError(.cannotParseResponse) }
+                let key = Self.archiveReadbackPrefix + id
+                let saved = try self.context.fetch(FetchDescriptor<CachedDeviceSetting>(
+                    predicate: #Predicate { $0.key == key },
+                )).first
+                let prior = try saved.map { try JSONDecoder().decode(ArchiveReadback.self, from: Data($0.value.utf8)) }
+                let rebuilt = restored.contains(id)
+                let observedDeletion = rebuilt
+                    ? try EventApplier.conversationDeletedAt(id, in: self.context)
+                    : prior?.observedDeletion
+                let cutoff = rebuilt ? receipt.restoredAt : prior?.serverDeletionCutoff
+                guard !rebuilt || cutoff != nil else { throw URLError(.cannotParseResponse) }
+                let window = ArchiveReadback(conversationId: id, start: min(start, prior?.start ?? start),
+                    rebuilt: rebuilt || prior?.rebuilt == true, observedDeletion: observedDeletion,
+                    serverDeletionCutoff: cutoff, id: UUID())
+                let value = String(decoding: try JSONEncoder().encode(window), as: UTF8.self)
+                if let saved {
+                    saved.value = value
+                    saved.updatedAt = Date()
+                } else {
+                    self.context.insert(CachedDeviceSetting(key: key, value: value, updatedAt: Date()))
+                }
+            }
+            try self.context.save()
+        }
+    }
+
+    func pendingArchiveReadback() async throws -> [ArchiveReadback] {
+        guard await accountIdProvider() != nil else { throw CancellationError() }
+        return try await MainActor.run {
+            try self.lifetime?.check()
+            let rows = try self.context.fetch(FetchDescriptor<CachedDeviceSetting>())
+            return try rows.filter { $0.key.hasPrefix(Self.archiveReadbackPrefix) }.map { row in
+                let item = try JSONDecoder().decode(ArchiveReadback.self, from: Data(row.value.utf8))
+                guard UUID(uuidString: item.conversationId) != nil, item.start >= 0,
+                      Self.archiveReadbackPrefix + item.conversationId == row.key else {
+                    throw URLError(.cannotParseResponse)
+                }
+                return item
+            }.sorted { $0.conversationId < $1.conversationId }
+        }
+    }
+
+    func reconcileRetainedArchiveReadback(myActorId: String) async throws {
+        let pending = try await pendingArchiveReadback()
+        var firstError: (any Error)?
+        for window in pending {
+            do {
+                try await refreshArchiveMerge(conversationIds: [window.conversationId],
+                    starts: [window.conversationId: window.start], myActorId: myActorId,
+                    restoredConversationIds: window.rebuilt ? [window.conversationId] : [],
+                    retainedWindow: window)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
+    }
+
     /// The merge route has already committed. Refresh only its declared
     /// timelines via the authoritative read endpoint; don't send or queue.
-    func refreshArchiveMerge(conversationIds: [String], starts: [String: Int], myActorId: String) async throws {
+    func refreshArchiveMerge(
+        conversationIds: [String],
+        starts: [String: Int],
+        myActorId: String,
+        restoredConversationIds: [String] = [],
+        retainedWindow: ArchiveReadback? = nil,
+    ) async throws {
         try lifetime?.check()
-        let summaries = try await listConversations()
+        let restored = Set(restoredConversationIds)
+        guard restored.isSubset(of: Set(conversationIds)) else { throw URLError(.cannotParseResponse) }
+        let fences = try await MainActor.run {
+            try self.lifetime?.check()
+            return try restored.reduce(into: [String: EventApplier.ArchiveRestoreFence]()) { result, id in
+                let fence = try EventApplier.archiveRestoreFence(conversationId: id, in: self.context)
+                if let retainedWindow {
+                    if let cutoff = retainedWindow.serverDeletionCutoff {
+                        if let active = fence.observedDeletion, active >= cutoff { throw URLError(.cannotParseResponse) }
+                    } else if retainedWindow.observedDeletion != fence.observedDeletion {
+                        throw URLError(.cannotParseResponse)
+                    }
+                }
+                result[id] = fence
+            }
+        }
+        var summaries: [ConversationListItem] = []
+        if restored.count < conversationIds.count {
+            summaries = try await listConversations()
+        }
+        if !restored.isEmpty {
+            guard restored.count <= 100, restored.allSatisfy({ UUID(uuidString: $0) != nil }) else {
+                throw URLError(.cannotParseResponse)
+            }
+            let rebuilt = try await listConversations(endpoint: Endpoints.conversations(archiveRecoveryIDs: Array(restored)))
+            guard Set(rebuilt.map(\.id)) == restored, rebuilt.count == restored.count else {
+                throw URLError(.cannotParseResponse)
+            }
+            summaries.removeAll { restored.contains($0.id) }
+            summaries.append(contentsOf: rebuilt)
+        }
         let limit = 200
         for id in conversationIds {
             guard let firstSequence = starts[id] else { throw URLError(.cannotParseResponse) }
+            let summary = summaries.first { $0.id == id }
+            let fence = fences[id]
+            if fence != nil, summary?.type != "direct" { throw URLError(.cannotParseResponse) }
+
             var cursor = firstSequence
             var finished = false
-            // The server writes at most 2,000 archived messages per request.
-            // Bound refresh work even while new messages are arriving.
+            var seen = Set<String>()
+            var rows: [RemoteMessageDTO] = []
+            // Buffer the bounded server window before clearing the old
+            // tombstone. A failed later page must not reveal half a restore.
             for _ in 0..<50 {
                 try lifetime?.check()
                 let page = try await listMessages(conversationId: id, cursor: cursor, limit: limit)
-                guard page.count <= limit,
-                      page.allSatisfy({ $0.conversationId == id && $0.sequence >= cursor }) else {
+                let next = try CloudChatViewModel.restorePageCursor(
+                    page, conversationId: id, start: cursor, limit: limit,
+                )
+                guard page.allSatisfy({ seen.insert($0.id).inserted }) else {
                     throw URLError(.cannotParseResponse)
                 }
-                let summary = summaries.first { $0.id == id }
-                try await MainActor.run {
-                    try self.lifetime?.check()
-                    try EventApplier.cacheArchiveMergeRows(
-                        conversationId: id, summary: summary, messages: page,
-                        myActorId: myActorId, in: self.context,
-                    )
-                }
-                if page.count < limit {
+                rows.append(contentsOf: page)
+                guard let next else {
                     finished = true
                     break
                 }
-                guard let maxSequence = page.map(\.sequence).max(), maxSequence < Int.max else {
-                    throw URLError(.cannotParseResponse)
-                }
-                // Server reads sequence >= cursor, sorted ascending.
-                cursor = maxSequence + 1
+                cursor = next
             }
             guard finished else { throw URLError(.cannotParseResponse) }
+            let checkedRows = rows
+            try await MainActor.run {
+                try self.lifetime?.check()
+                let retainedRow: CachedDeviceSetting?
+                if let retainedWindow {
+                    let key = Self.archiveReadbackPrefix + id
+                    retainedRow = try self.context.fetch(FetchDescriptor<CachedDeviceSetting>(
+                        predicate: #Predicate { $0.key == key },
+                    )).first
+                    guard let retainedRow,
+                          try JSONDecoder().decode(ArchiveReadback.self, from: Data(retainedRow.value.utf8)) == retainedWindow else {
+                        throw CancellationError()
+                    }
+                } else {
+                    retainedRow = nil
+                }
+                try EventApplier.cacheArchiveMergeRows(
+                    conversationId: id, summary: summary, messages: checkedRows,
+                    myActorId: myActorId, in: self.context, restoration: fence,
+                    serverDeletionCutoff: retainedWindow?.serverDeletionCutoff, completedReadback: retainedRow,
+                )
+            }
         }
     }
 
@@ -147,12 +285,7 @@ public actor ConversationRepository {
     public func cachedConversationList(myActorId: String? = nil) async -> [ConversationListItem] {
         await MainActor.run { () -> [ConversationListItem] in
             guard self.lifetime?.isActive != false else { return [] }
-            let tombstones = (try? self.context.fetch(
-                FetchDescriptor<CachedTombstone>(
-                    predicate: #Predicate { $0.table == "conversations" },
-                ),
-            ))?.map(\.rowId) ?? []
-            let tombstoneSet = Set(tombstones)
+            guard let tombstoneSet = try? EventApplier.deletedConversationIDs(in: self.context) else { return [] }
             let conversations = (try? self.context.fetch(
                 FetchDescriptor<CachedConversation>(
                     sortBy: [SortDescriptor(\.createdAt, order: .reverse)],
@@ -168,10 +301,12 @@ public actor ConversationRepository {
                 let convMessages = messages
                     .filter { $0.conversationId == conversation.id && $0.deletedAt == nil }
                     .sorted { $0.sequence < $1.sequence }
-                guard let last = convMessages.last else { continue }
-                let myRead = members
-                    .first { $0.conversationId == conversation.id && $0.actorId == myActorId }
-                    .map(\.lastReadSequence) ?? 0
+                let last = convMessages.last
+                let myMember = members.first { $0.conversationId == conversation.id && $0.actorId == myActorId }
+                // A successfully rebuilt, server-listed private direct may
+                // legitimately be empty. Never surface unowned empty chats.
+                guard last != nil || (conversation.type == "direct" && myMember?.status == "active") else { continue }
+                let myRead = myMember?.lastReadSequence ?? 0
                 let unread = convMessages.filter { $0.sequence > myRead }.count
                 let title: String?
                 if conversation.type == "group" {
@@ -179,8 +314,7 @@ public actor ConversationRepository {
                 } else if conversation.type == "hidden_ai_direct" {
                     continue // never cached, never listed
                 } else {
-                    title = actorNames[last.senderActorId]
-                        ?? conversation.publicName
+                    title = last.flatMap { actorNames[$0.senderActorId] } ?? conversation.publicName
                 }
                 items.append(
                     ConversationListItem(
@@ -188,8 +322,8 @@ public actor ConversationRepository {
                         type: conversation.type,
                         publicName: title,
                         unreadCount: unread,
-                        lastMessagePreview: last.content,
-                        lastActivityAt: last.createdAt,
+                        lastMessagePreview: last?.content,
+                        lastActivityAt: last?.createdAt ?? conversation.createdAt,
                     ),
                 )
             }
@@ -202,6 +336,11 @@ public actor ConversationRepository {
     public func cachedMessages(conversationId: String) async -> [RemoteMessageDTO] {
         await MainActor.run { () -> [RemoteMessageDTO] in
             guard self.lifetime?.isActive != false else { return [] }
+            // A deleted conversation may still have old message cache rows.
+            // Do not use them as a fallback before an authorized rebuild.
+            do {
+                guard try EventApplier.conversationDeletedAt(conversationId, in: self.context) == nil else { return [] }
+            } catch { return [] }
             let rows = (try? self.context.fetch(
                 FetchDescriptor<CachedMessage>(
                     predicate: #Predicate { $0.conversationId == conversationId },

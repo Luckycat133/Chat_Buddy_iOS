@@ -33,6 +33,8 @@ struct PortableBackupMergeService {
         let previewToken: String
         let counts: Counts
         let conflicts: ConflictIDs?
+        let restoredConversationIds: [String]?
+        let unsupportedConversationIds: [String]?
     }
 
     struct Receipt: Decodable, Sendable {
@@ -40,6 +42,8 @@ struct PortableBackupMergeService {
         let counts: Counts
         let affectedConversationIds: [String]
         let affectedConversationStarts: [String: Int]
+        let restoredConversationIds: [String]?
+        let restoredAt: Date?
     }
 
     enum MergeError: Error, Equatable {
@@ -60,7 +64,15 @@ struct PortableBackupMergeService {
         let plan: Preview = try await http.send(Endpoints.portableBackupMergePreview,
                                                 method: "POST", body: PreviewRequest())
         guard plan.archiveSha256 == backup.sha256 else { throw MergeError.archiveChanged }
-        guard plan.counts.isValid, !plan.previewToken.isEmpty else { throw MergeError.invalidPreview }
+        let archive = Set((backup.account?.conversations ?? []).compactMap { UUID(uuidString: $0.id) })
+        guard plan.counts.isValid, !plan.previewToken.isEmpty,
+              let restored = Self.checkedIDs(plan.restoredConversationIds),
+              let unsupported = Self.checkedIDs(plan.unsupportedConversationIds),
+              restored.count == plan.counts.conversations.insert,
+              restored.isSubset(of: archive), unsupported.isSubset(of: archive),
+              restored.isDisjoint(with: unsupported) else {
+            throw MergeError.invalidPreview
+        }
         return plan
     }
 
@@ -80,13 +92,30 @@ struct PortableBackupMergeService {
             throw MergeError.resultUnconfirmed
         }
         let affected = Set(receipt.affectedConversationIds)
+        let restored = Set(receipt.restoredConversationIds ?? [])
+        let expectedRestore = Set(plan.restoredConversationIds ?? [])
         guard receipt.archiveSha256 == plan.archiveSha256, receipt.counts == plan.counts,
               !affected.isEmpty, affected.count <= 100, affected.count == receipt.affectedConversationIds.count,
-              affected.allSatisfy({ UUID(uuidString: $0) != nil }),
+              let affectedUUIDs = Self.checkedIDs(receipt.affectedConversationIds),
+              let restoredUUIDs = Self.checkedIDs(receipt.restoredConversationIds),
+              let previewUUIDs = Self.checkedIDs(plan.restoredConversationIds),
+              restoredUUIDs == previewUUIDs, restored.count == expectedRestore.count,
+              restored.isSubset(of: affected),
+              (receipt.restoredAt != nil) == !restored.isEmpty,
+              affectedUUIDs.count == affected.count,
               Set(receipt.affectedConversationStarts.keys) == affected,
               receipt.affectedConversationStarts.values.allSatisfy({ $0 >= 0 }) else {
             throw MergeError.resultUnconfirmed
         }
         return receipt
+    }
+
+    // Optional fields preserve compatibility with the additive-only Web
+    // contract. Reject duplicate IDs even when UUID case differs.
+    private static func checkedIDs(_ ids: [String]?) -> Set<UUID>? {
+        let ids = ids ?? []
+        let normalized = Set(ids.compactMap { UUID(uuidString: $0) })
+        guard ids.count <= 1_000, normalized.count == ids.count else { return nil }
+        return normalized
     }
 }
