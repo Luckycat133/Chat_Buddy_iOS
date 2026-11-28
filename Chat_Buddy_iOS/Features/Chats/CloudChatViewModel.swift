@@ -106,8 +106,9 @@ public final class CloudChatViewModel: ObservableObject {
             if replace {
                 serverMessages = page
             } else {
-                var known = Set(serverMessages.map(\.id))
-                serverMessages.append(contentsOf: page.filter { known.insert($0.id).inserted })
+                let known = Set(serverMessages.map(\.id))
+                guard page.allSatisfy({ !known.contains($0.id) }) else { throw URLError(.cannotParseResponse) }
+                serverMessages.append(contentsOf: page)
             }
             nextRestoreCursor = next
             error = nil
@@ -119,10 +120,12 @@ public final class CloudChatViewModel: ObservableObject {
         }
     }
 
-    static func restorePageCursor(_ page: [RemoteMessageDTO], conversationId: String,
+    nonisolated static func restorePageCursor(_ page: [RemoteMessageDTO], conversationId: String,
                                   start: Int, limit: Int) throws -> Int? {
-        guard page.count <= limit,
-              page.allSatisfy({ $0.conversationId == conversationId && $0.sequence >= start }) else {
+        guard start >= 0, page.count <= limit,
+              Set(page.map(\.id)).count == page.count,
+              page.allSatisfy({ $0.conversationId == conversationId && $0.sequence >= start }),
+              zip(page, page.dropFirst()).allSatisfy({ $0.0.sequence < $0.1.sequence }) else {
             throw URLError(.cannotParseResponse)
         }
         guard page.count == limit else { return nil }

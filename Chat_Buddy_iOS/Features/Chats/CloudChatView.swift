@@ -45,12 +45,17 @@ public struct CloudChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
+                    let restored = viewModel.isReadOnlyRestoreWindow
+                    let replies = restored ? Dictionary(
+                        viewModel.rows.map { ($0.id, $0.content) }, uniquingKeysWith: { first, _ in first },
+                    ) : [:]
                     if let error = viewModel.error {
                         Label(error, systemImage: "exclamationmark.bubble")
                             .foregroundStyle(.red)
                     }
                     ForEach(viewModel.rows) { row in
-                        CloudMessageRow(row: row) {
+                        let quotedMessage = row.replyToMessageId.flatMap { replies[$0] }
+                        CloudMessageRow(row: row, readOnlyRestore: restored, quotedMessage: quotedMessage) {
                             Task { await viewModel.retry(row: row) }
                         }
                         .id(row.id)
@@ -98,6 +103,8 @@ public struct CloudChatView: View {
 
 private struct CloudMessageRow: View {
     let row: ChatRowModel
+    let readOnlyRestore: Bool
+    let quotedMessage: String?
     let onRetry: () -> Void
     @Environment(LocalizationManager.self) private var loc
 
@@ -109,13 +116,29 @@ private struct CloudMessageRow: View {
             if !isHuman {
                 statusAccessory
             }
-            Text(row.content)
+            VStack(alignment: .leading, spacing: 4) {
+                if readOnlyRestore {
+                    Text(row.senderActorId)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if row.replyToMessageId != nil {
+                        let fallback = loc.resolvedLanguage == .zh ? "引用的消息尚未加载或不可用" : "Referenced message is not loaded or available"
+                        Label(quotedMessage ?? fallback, systemImage: "arrowshape.turn.up.left")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Text(row.content)
+            }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(isHuman ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.15))
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .accessibilityLabel(
-                    Text("\(isHuman ? loc.t("cloud_chat_a11y_you") : loc.t("cloud_chat_a11y_contact")) \(row.content)"),
+                    Text(readOnlyRestore
+                         ? "\(row.senderActorId) \(quotedMessage ?? "") \(row.content)"
+                         : "\(isHuman ? loc.t("cloud_chat_a11y_you") : loc.t("cloud_chat_a11y_contact")) \(row.content)"),
                 )
             if isHuman {
                 statusAccessory
@@ -127,7 +150,10 @@ private struct CloudMessageRow: View {
     /// Queued/failed markers live next to the sender's own bubbles only.
     @ViewBuilder
     private var statusAccessory: some View {
-        switch row.status {
+        if readOnlyRestore {
+            EmptyView()
+        } else {
+          switch row.status {
         case .delivered:
             EmptyView()
         case .queued, .sending:
@@ -142,6 +168,7 @@ private struct CloudMessageRow: View {
                     .foregroundStyle(.red)
             }
             .accessibilityLabel(loc.t("cloud_chat_status_retry_a11y"))
+          }
         }
     }
 }

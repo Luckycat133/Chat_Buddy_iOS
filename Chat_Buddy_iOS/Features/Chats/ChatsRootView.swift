@@ -46,6 +46,9 @@ public struct ChatsRootView: View {
                     await deltaSyncAndReload()
                 }
                 .onAppear { Task { await reloadFromCache() } }
+                .onChange(of: app.archiveMergeRevision) { _, _ in
+                    Task { await reloadFromCache() }
+                }
         }
     }
 

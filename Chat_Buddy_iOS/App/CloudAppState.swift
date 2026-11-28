@@ -47,6 +47,7 @@ public final class CloudAppState: ObservableObject {
     @Published public var pendingDeepLink: DeepLinkRouter.PendingRoute?
     @Published public private(set) var accountDeletion: AccountDeletion = .idle
     @Published public private(set) var sessionGeneration = UUID()
+    @Published private(set) var archiveMergeRevision = UUID()
 
     public var container: ModelContainer { scope.container }
     public let auth: AuthSession
@@ -469,8 +470,10 @@ public final class CloudAppState: ObservableObject {
             conversationIds: receipt.affectedConversationIds,
             starts: receipt.affectedConversationStarts,
             myActorId: actorId,
+            restoredConversationIds: receipt.restoredConversationIds ?? [],
         )
         try current.lifetime.check()
+        archiveMergeRevision = UUID()
     }
 
     public func runInitialSync() async {

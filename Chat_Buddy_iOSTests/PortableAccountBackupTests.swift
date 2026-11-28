@@ -286,6 +286,151 @@ final class PortableAccountBackupTests: XCTestCase {
         }
     }
 
+    func testRebuildPreviewAndReceiptRejectUnscopedOrChangedRestoration() async throws {
+        let backup = try PortableAccountBackup(document: fixture())
+        let id = try XCTUnwrap(backup.account?.conversations.first?.id)
+        let foreign = "99999999-9999-4999-8999-999999999999"
+        let counts = ["conversations": ["insert": 1, "skip": 0, "conflict": 0],
+                      "messages": ["insert": 2, "skip": 0, "conflict": 0],
+                      "attachments": ["insert": 0, "skip": 0, "conflict": 0]]
+        func preview(_ restore: [String], unsupported: [String] = []) throws -> Data {
+            try mergeJSON(["archiveSha256": backup.sha256, "previewToken": "restore-lease", "counts": counts,
+                           "restoredConversationIds": restore, "unsupportedConversationIds": unsupported])
+        }
+        func receipt(_ restore: String) throws -> Data {
+            try mergeJSON(["archiveSha256": backup.sha256, "counts": counts,
+                           "affectedConversationIds": [restore], "affectedConversationStarts": [restore: 1],
+                           "restoredConversationIds": [restore]])
+        }
+        let script = OutboxHTTPStub.Script([
+            .response(200, try preview([foreign])),
+            .response(200, try preview([id], unsupported: [id])),
+            .response(200, try preview([id])),
+            .response(200, try receipt(foreign)),
+            .response(200, try preview([id])),
+            .response(200, try receipt(id)),
+        ])
+        let (service, url, session) = try await makeMergeService(script)
+        defer { OutboxHTTPStub.remove(url); session.invalidateAndCancel() }
+        for _ in 0..<2 {
+            do {
+                _ = try await service.preview(for: backup)
+                XCTFail("Unscoped or contradictory preview must not arm commit")
+            } catch let error as PortableBackupMergeService.MergeError {
+                XCTAssertEqual(error, .invalidPreview)
+            }
+        }
+        let plan = try await service.preview(for: backup)
+        XCTAssertEqual(plan.restoredConversationIds, [id])
+        XCTAssertEqual(plan.counts.conversations.insert, 1)
+        do {
+            _ = try await service.commit(plan, confirmed: false)
+            XCTFail("No rebuild request before confirmation")
+        } catch let error as PortableBackupMergeService.MergeError {
+            XCTAssertEqual(error, .confirmationRequired)
+        }
+        XCTAssertEqual(script.requests.count, 3)
+        do {
+            _ = try await service.commit(plan, confirmed: true)
+            XCTFail("Receipt must identify the exact confirmed restoration")
+        } catch let error as PortableBackupMergeService.MergeError {
+            XCTAssertEqual(error, .resultUnconfirmed)
+        }
+        let fresh = try await service.preview(for: backup)
+        let committed = try await service.commit(fresh, confirmed: true)
+        XCTAssertEqual(committed.restoredConversationIds, [id])
+        XCTAssertEqual(committed.affectedConversationStarts, [id: 1])
+        XCTAssertEqual(script.requests.map(\.path), [
+            "/v1/account/backup/merge/preview", "/v1/account/backup/merge/preview",
+            "/v1/account/backup/merge/preview", "/v1/account/backup/merge/commit",
+            "/v1/account/backup/merge/preview", "/v1/account/backup/merge/commit",
+        ])
+    }
+
+    func testRebuildReadbackKeepsOldTombstoneOnFailureThenRestoresFullReplyChain() async throws {
+        let id = "11111111-1111-4111-8111-111111111111"
+        let another = "22222222-2222-4222-8222-222222222222"
+        let date = "2026-11-28T00:00:00.000Z"
+        let summary = try mergeJSON(["items": [["id": id, "type": "direct", "createdAt": date,
+                                                "publicName": "Rebuilt fixture", "lastReadSequence": 199]]])
+        func page(_ sequences: Range<Int>) throws -> Data {
+            let items: [[String: Any]] = sequences.map { seq in
+                let actor = seq == 199 ? "fixture-human" : seq == 200 ? "fixture-assistant" : "fixture-system"
+                var row: [String: Any] = ["id": "thread-\(seq)", "conversationId": id,
+                    "senderActorId": actor, "sequence": seq, "clientIdempotencyKey": "reply-\(seq)",
+                    "kind": "text", "content": "Synthetic \(seq)", "status": "accepted", "createdAt": date]
+                if seq >= 200 { row["replyToMessageId"] = "thread-\(seq - 1)" }
+                return row
+            }
+            return try mergeJSON(["items": items])
+        }
+        let first = try page(1..<201)
+        let second = try page(201..<202)
+        let script = OutboxHTTPStub.Script([
+            .response(200, summary), .response(200, first), .response(403, Data()),
+            .response(200, summary), .response(200, first), .response(200, second),
+            .response(200, summary), .response(200, first), .response(200, second),
+        ])
+        let (service, url, session) = try await makeMergeService(script)
+        defer { OutboxHTTPStub.remove(url); session.invalidateAndCancel() }
+        let container = try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema)
+        let context = ModelContext(container)
+        context.insert(CachedTombstone(table: "conversations", rowId: id, deletedAt: Date(timeIntervalSince1970: 20)))
+        context.insert(CachedTombstone(table: "messages", rowId: another, deletedAt: Date(timeIntervalSince1970: 30)))
+        try context.save()
+        let repository = ConversationRepository(http: service.http, context: context,
+            outbox: OutboxStore(context: context), accountIdProvider: { "fixture-account" })
+        do {
+            try await repository.refreshArchiveMerge(conversationIds: [id], starts: [id: 1],
+                myActorId: "fixture-human", restoredConversationIds: [id])
+            XCTFail("Incomplete authoritative reply paging must not reveal a rebuilt chat")
+        } catch {}
+        let firstVisibleList = await repository.cachedConversationList(myActorId: "fixture-human")
+        XCTAssertTrue(firstVisibleList.isEmpty)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<CachedMessage>()).isEmpty)
+        XCTAssertEqual(Set(try context.fetch(FetchDescriptor<CachedTombstone>()).map(\.rowId)), Set([id, another]))
+
+        for _ in 0..<2 {
+            try await repository.refreshArchiveMerge(conversationIds: [id], starts: [id: 1],
+                myActorId: "fixture-human", restoredConversationIds: [id])
+        }
+        let visible = await repository.cachedConversationList(myActorId: "fixture-human")
+        XCTAssertEqual(visible.map(\.id), [id])
+        XCTAssertEqual(visible.first?.publicName, "Rebuilt fixture")
+        let rows = await repository.cachedMessages(conversationId: id)
+        XCTAssertEqual(rows.count, 201)
+        XCTAssertEqual(rows.suffix(3).map(\.senderActorId), ["fixture-human", "fixture-assistant", "fixture-system"])
+        XCTAssertEqual(rows.suffix(2).map(\.replyToMessageId), ["thread-199", "thread-200"])
+        XCTAssertEqual(rows.suffix(2).map(ChatRowModel.fromServer).map(\.replyToMessageId), ["thread-199", "thread-200"])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<CachedTombstone>()).map(\.rowId), [another])
+        XCTAssertEqual(script.requests.map(\.method), Array(repeating: "GET", count: 9))
+    }
+
+    func testOnlyObservedConversationTombstoneCanBeCleared() throws {
+        let id = "11111111-1111-4111-8111-111111111111"
+        let other = "22222222-2222-4222-8222-222222222222"
+        let date = Date(timeIntervalSince1970: 20)
+        let container = try ModelContainerFactory.makeInMemory(schema: ModelContainerFactory.schema)
+        let context = ModelContext(container)
+        let deleted = CachedTombstone(table: "conversations", rowId: id, deletedAt: date)
+        context.insert(deleted)
+        try context.save()
+        let old = try EventApplier.archiveRestoreFence(conversationId: id, in: context)
+        let summary = ConversationRepository.ConversationListItem(
+            id: id, type: "direct", publicName: "Archived direct", unreadCount: 0,
+            lastMessagePreview: nil, lastActivityAt: date, lastReadSequence: 0)
+        deleted.deletedAt = date.addingTimeInterval(10)
+        try context.save()
+        XCTAssertThrowsError(try EventApplier.cacheArchiveMergeRows(conversationId: id, summary: summary,
+            messages: [], myActorId: "fixture", in: context, restoration: old))
+        XCTAssertThrowsError(try EventApplier.cacheArchiveMergeRows(conversationId: other, summary: summary,
+            messages: [], myActorId: "fixture", in: context, restoration: old))
+        try EventApplier.cacheArchiveMergeRows(conversationId: id, summary: summary,
+            messages: [], myActorId: "fixture", in: context)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<CachedConversation>()).isEmpty)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<CachedTombstone>()).first?.deletedAt, date.addingTimeInterval(10))
+    }
+
     private func mergeJSON(_ payload: [String: Any]) throws -> Data {
         try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     }

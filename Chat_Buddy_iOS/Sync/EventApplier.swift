@@ -476,16 +476,35 @@ public enum EventApplier {
         try context.save()
     }
 
-    /// REST refresh after a private archive merge. Existing cache rows and
-    /// tombstones win so a delayed page cannot overwrite a newer sync result.
+    struct ArchiveRestoreFence: Sendable {
+        let observedDeletion: Date?
+    }
+
+    static func archiveRestoreFence(conversationId: String, in context: ModelContext) throws -> ArchiveRestoreFence {
+        let timestamp = try findTombstone(table: "conversations", rowId: conversationId, in: context)?.deletedAt
+        return ArchiveRestoreFence(observedDeletion: timestamp)
+    }
+
+    /// A receipt-authorized rebuild can retire only the precise old conversation
+    /// tombstone observed before its authoritative reads. A newer deletion or a
+    /// failed/incomplete read cannot be overwritten by delayed pages.
     static func cacheArchiveMergeRows(
         conversationId: String,
         summary: ConversationRepository.ConversationListItem?,
         messages: [RemoteMessageDTO],
         myActorId: String,
         in context: ModelContext,
+        restoration: ArchiveRestoreFence? = nil,
     ) throws {
-        guard try !hasTombstone(table: "conversations", rowId: conversationId, in: context) else { return }
+        let tombstone = try findTombstone(table: "conversations", rowId: conversationId, in: context)
+        if let restoration {
+            guard let summary, summary.id == conversationId, summary.type == "direct",
+                  tombstone?.deletedAt == restoration.observedDeletion else {
+                throw URLError(.cannotParseResponse)
+            }
+        } else if tombstone != nil {
+            return
+        }
         if let summary, summary.id == conversationId, try fetchConversation(id: conversationId, in: context) == nil {
             try applyConversation(RemoteConversationDTO(
                 id: conversationId, socialGraphId: "", type: summary.type, publicName: summary.publicName,
@@ -494,7 +513,8 @@ public enum EventApplier {
         }
         // Use only an explicitly returned server cursor and never replace an
         // existing local member, which may have a more recent read cursor.
-        if let summary, summary.id == conversationId, let readThrough = summary.lastReadSequence,
+        if let summary, summary.id == conversationId,
+           let readThrough = summary.lastReadSequence ?? (restoration == nil ? nil : 0),
            try fetchMember(conversationId: conversationId, actorId: myActorId, in: context) == nil {
             try applyConversationMember(RemoteConversationMemberDTO(
                 id: nil, conversationId: conversationId, actorId: myActorId, status: "active",
@@ -507,16 +527,20 @@ public enum EventApplier {
             if try fetchMessage(id: dto.id, in: context) != nil { continue }
             try upsertMessage(dto, id: dto.id, in: context)
         }
+        if restoration != nil, let tombstone { context.delete(tombstone) }
         try context.save()
     }
 
     private static func hasTombstone(table: String, rowId: String, in context: ModelContext) throws -> Bool {
-        let tombstones = try context.fetch(
+        try findTombstone(table: table, rowId: rowId, in: context) != nil
+    }
+
+    private static func findTombstone(table: String, rowId: String, in context: ModelContext) throws -> CachedTombstone? {
+        try context.fetch(
             FetchDescriptor<CachedTombstone>(predicate: #Predicate {
                 $0.table == table && $0.rowId == rowId
             }),
-        )
-        return !tombstones.isEmpty
+        ).first
     }
 
     // MARK: - Fetch helpers
