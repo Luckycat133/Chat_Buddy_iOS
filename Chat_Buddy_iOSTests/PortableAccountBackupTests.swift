@@ -546,7 +546,7 @@ final class PortableAccountBackupTests: XCTestCase {
             query.query = request.query
             XCTAssertTrue(query.queryItems?.contains(URLQueryItem(name: "ids", value: id)) == true)
         }
-        XCTAssertFalse(script.requests.contains { $0.path.contains("/merge/commit") })
+        XCTAssertFalse(script.requests.contains { $0.path?.contains("/merge/commit") == true })
     }
 
     private func mergeJSON(_ payload: [String: Any]) throws -> Data {
